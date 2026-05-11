@@ -1,37 +1,41 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
   ImageBackground,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-
+} from 'react-native';
 import firebase from '../../Config/index';
 import { supabase } from '../../Config/index';
+
 const auth = firebase.auth();
 const database = firebase.database();
-const ref_all_accounts = database.ref("allaccounts");
-
-
+const ref_all_accounts = database.ref('allaccounts');
 
 export default function MyAccount(props) {
   const userid = props.route.params.userid;
   const var_my_account = ref_all_accounts.child(userid);
+
   const [Nom, setNom] = useState('');
   const [Pseudo, setPseudo] = useState('');
   const [Email, setEmail] = useState('');
   const [Numero, setNumero] = useState('');
-  const [UrlImage, setUrlImage] = useState();
+  const [UrlImage, setUrlImage] = useState(null);
+  const [photoHistory, setPhotoHistory] = useState([]);
+  const [showPhotoSource, setShowPhotoSource] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    var_my_account.on("value", (snapshot) => {
+    var_my_account.on('value', (snapshot) => {
       var data = snapshot.val();
       if (data) {
         setPseudo(data.Pseudo);
@@ -42,61 +46,61 @@ export default function MyAccount(props) {
       }
     });
 
-    return () => {
-      var_my_account.off();
-    };
-  }, []);
-
-  const pickImage = async () => {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!permissionResult.granted) {
-      Alert.alert(
-        "Permission required",
-        "Permission to access the media library is required."
-      );
-      return;
-    }
-
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
+    // Load photo history
+    var_my_account.child('photoHistory').on('value', (snapshot) => {
+      const hist = [];
+      snapshot.forEach((item) => hist.push(item.val()));
+      setPhotoHistory(hist.reverse());
     });
 
-    console.log(result);
-
-    if (!result.canceled) {
-      setUrlImage(result.assets[0].uri);
-    }
-  };
+    return () => {
+      var_my_account.off();
+      var_my_account.child('photoHistory').off();
+    };
+  }, []);
 
   const uploadImageToSupabase = async (url) => {
     const response = await fetch(url);
     const blob = await response.blob();
     const arraybuffer = await new Response(blob).arrayBuffer();
-
-    const filenameInSupabase = Date.now() + ".jpg";
-
-    await supabase.storage
-      .from("Images")
-      .upload(filenameInSupabase, arraybuffer, {
-        upsert: true,
-      });
-
-    const { data } = supabase.storage
-      .from("Images")
-      .getPublicUrl(filenameInSupabase);
-    console.log(data);
+    const filenameInSupabase = Date.now() + '.jpg';
+    await supabase.storage.from('Images').upload(filenameInSupabase, arraybuffer, { upsert: true });
+    const { data } = supabase.storage.from('Images').getPublicUrl(filenameInSupabase);
     return data.publicUrl;
   };
 
+  const pickFromGallery = async () => {
+    setShowPhotoSource(false);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission requise', 'Accès galerie nécessaire.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) setUrlImage(result.assets[0].uri);
+  };
+
+  const pickFromCamera = async () => {
+    setShowPhotoSource(false);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission requise', 'Accès caméra nécessaire.'); return; }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) setUrlImage(result.assets[0].uri);
+  };
+
   const handleSave = async () => {
-    const link = UrlImage
-      ? await uploadImageToSupabase(UrlImage)
-      : null;
+    const link = UrlImage ? await uploadImageToSupabase(UrlImage) : null;
+
+    // Save to photo history if image changed
+    if (link) {
+      var_my_account.child('photoHistory').push(link);
+    }
 
     const ref_one_account = ref_all_accounts.child(userid);
     ref_one_account
@@ -109,60 +113,71 @@ export default function MyAccount(props) {
         UrlImage: link,
       })
       .then(() => {
-        console.log("Compte ajouté !");
-        props.navigation.navigate("ListAccount");
+        console.log('Compte ajouté !');
+        props.navigation.navigate('ListAccount');
       })
       .catch((error) => {
         console.log(error);
       });
   };
 
+  const handleSignOut = async () => {
+    await AsyncStorage.removeItem('rememberedUser');
+    firebase.auth().signOut().then(() => props.navigation.replace('Auth'));
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert('Supprimer le compte', 'Cette action est irréversible.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer', style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.removeItem('rememberedUser');
+          var_my_account.remove();
+          auth.currentUser?.delete();
+          props.navigation.replace('Auth');
+        },
+      },
+    ]);
+  };
+
   return (
-    <ImageBackground
-      source={require("../../assets/backgroundreact.jpg")}
-      style={styles.container}
-    >
+    <ImageBackground source={require('../../assets/backgroundreact.jpg')} style={styles.container}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         <Text style={styles.title}>Mon Compte</Text>
 
-        <TouchableOpacity onPress={pickImage} style={styles.avatarWrapper}>
+        {/* Avatar */}
+        <TouchableOpacity onPress={() => setShowPhotoSource(true)} style={styles.avatarWrapper}>
           <Image
-            source={UrlImage ? { uri: UrlImage } : require("../../assets/profil.png")}
+            source={UrlImage ? { uri: UrlImage } : require('../../assets/profil.png')}
             style={styles.avatar}
           />
           <View style={styles.editBadge}>
-            <Text style={styles.editBadgeText}>✎</Text>
+            <Text style={styles.editBadgeText}>📷</Text>
           </View>
         </TouchableOpacity>
 
+        {/* Photo history */}
+        <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn}>
+          <Text style={styles.historyBtnText}>🕓 Historique photos ({photoHistory.length})</Text>
+        </TouchableOpacity>
+
+        {/* Form */}
         <View style={styles.card}>
           <Text style={styles.label}>Nom</Text>
-          <TextInput
-            value={Nom}
-            onChangeText={setNom}
-            placeholder="Votre nom"
-            placeholderTextColor="#90A4AE"
-            style={styles.input}
-          />
+          <TextInput value={Nom} onChangeText={setNom} placeholder="Votre nom" placeholderTextColor="#90A4AE" style={styles.input} />
+
           <Text style={styles.label}>Pseudo</Text>
-          <TextInput
-            value={Pseudo}
-            onChangeText={setPseudo}
-            placeholder="Votre pseudo"
-            placeholderTextColor="#90A4AE"
-            style={styles.input}
-          />
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            value={Email}
-            onChangeText={setEmail}
-            placeholder="email@exemple.com"
-            placeholderTextColor="#90A4AE"
-            keyboardType="email-address"
-            style={styles.input}
-          />
+          <TextInput value={Pseudo} onChangeText={setPseudo} placeholder="Votre pseudo" placeholderTextColor="#90A4AE" style={styles.input} />
+
+          <Text style={styles.label}>Email (non modifiable)</Text>
+          <View style={styles.inputLocked}>
+            <Text style={styles.lockedText}>{Email || '—'}</Text>
+            <Text style={{ fontSize: 14 }}>🔒</Text>
+          </View>
+
           <Text style={styles.label}>Numéro</Text>
           <TextInput
             value={Numero}
@@ -178,33 +193,67 @@ export default function MyAccount(props) {
           <Text style={styles.btnText}>Sauvegarder</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => auth.signOut().then(() => props.navigation.replace('Auth'))}
-          style={styles.btnLogout}
-        >
+        <TouchableOpacity onPress={handleSignOut} style={styles.btnLogout}>
           <Text style={styles.btnText}>Se déconnecter</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => {
-            Alert.alert('Supprimer le compte', 'Cette action est irréversible.', [
-              { text: 'Annuler', style: 'cancel' },
-              {
-                text: 'Supprimer', style: 'destructive',
-                onPress: () => {
-                  ref_all_accounts.child(userid).remove();
-                  auth.currentUser?.delete();
-                  props.navigation.replace('Auth');
-                }
-              }
-            ]);
-          }}
-          style={styles.btnDelete}
-        >
+        <TouchableOpacity onPress={handleDeleteAccount} style={styles.btnDelete}>
           <Text style={styles.btnText}>Supprimer le compte</Text>
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* Photo source chooser */}
+      <Modal visible={showPhotoSource} transparent animationType="slide">
+        <TouchableOpacity style={styles.modalBg} onPress={() => setShowPhotoSource(false)} activeOpacity={1}>
+          <View style={styles.sourceSheet}>
+            <Text style={styles.sourceTitle}>Choisir une photo</Text>
+            <TouchableOpacity style={styles.sourceBtn} onPress={pickFromCamera}>
+              <Text style={styles.sourceBtnText}>📷 Prendre une photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sourceBtn} onPress={pickFromGallery}>
+              <Text style={styles.sourceBtnText}>🖼️ Galerie</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.sourceBtn, { backgroundColor: '#eee' }]} onPress={() => setShowPhotoSource(false)}>
+              <Text style={[styles.sourceBtnText, { color: '#555' }]}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Photo history modal */}
+      <Modal visible={showHistory} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={styles.historyCard}>
+            <Text style={styles.sourceTitle}>Historique des photos</Text>
+            {photoHistory.length === 0 ? (
+              <Text style={{ color: '#90A4AE', marginTop: 12 }}>Aucune photo sauvegardée</Text>
+            ) : (
+              <ScrollView contentContainerStyle={styles.historyGrid}>
+                {photoHistory.map((url, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => {
+                      setUrlImage(url);
+                      setShowHistory(false);
+                    }}
+                  >
+                    <Image source={{ uri: url }} style={styles.historyThumb} />
+                    {i === 0 && (
+                      <View style={styles.currentBadge}>
+                        <Text style={{ color: '#fff', fontSize: 10 }}>Actuelle</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={styles.closeHistoryBtn} onPress={() => setShowHistory(false)}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -231,7 +280,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   avatarWrapper: {
-    marginBottom: 24,
+    marginBottom: 10,
     position: 'relative',
   },
   avatar: {
@@ -245,20 +294,34 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#C9A84C',
-    borderRadius: 14,
-    width: 28,
-    height: 28,
+    backgroundColor: '#00897B',
+    borderRadius: 18,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   editBadgeText: {
+    fontSize: 16,
+  },
+  historyBtn: {
+    marginBottom: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  historyBtnText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    fontSize: 13,
   },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.90)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderRadius: 20,
     padding: 20,
     width: '100%',
@@ -287,6 +350,21 @@ const styles = StyleSheet.create({
     color: '#004D40',
     borderWidth: 1,
     borderColor: '#B2DFDB',
+  },
+  inputLocked: {
+    backgroundColor: '#ECEFF1',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#CFD8DC',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  lockedText: {
+    fontSize: 15,
+    color: '#78909C',
   },
   btnSave: {
     backgroundColor: '#00897B',
@@ -322,4 +400,78 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 0.5,
   },
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  sourceSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    width: '100%',
+  },
+  sourceTitle: {
+    fontWeight: 'bold',
+    fontSize: 18,
+    color: '#004D40',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  sourceBtn: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#B2DFDB',
+  },
+  sourceBtnText: {
+    color: '#004D40',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    width: '92%',
+    alignItems: 'center',
+    maxHeight: '75%',
+  },
+  historyGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  historyThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    margin: 6,
+    borderWidth: 2,
+    borderColor: '#B2DFDB',
+  },
+  currentBadge: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: '#00897B',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  closeHistoryBtn: {
+    marginTop: 14,
+    backgroundColor: '#00897B',
+    borderRadius: 22,
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+  },
 });
+
