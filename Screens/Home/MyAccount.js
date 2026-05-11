@@ -35,14 +35,16 @@ export default function MyAccount(props) {
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
+    // Email always comes from Firebase Auth (works for new accounts too)
+    setEmail(auth.currentUser?.email || '');
+
     var_my_account.on('value', (snapshot) => {
       var data = snapshot.val();
       if (data) {
-        setPseudo(data.Pseudo);
-        setNumero(data.Numero);
-        setEmail(data.Email);
-        setNom(data.Nom);
-        setUrlImage(data.UrlImage);
+        setPseudo(data.Pseudo || '');
+        setNumero(data.Numero || '');
+        setNom(data.Nom || '');
+        setUrlImage(data.UrlImage || null);
       }
     });
 
@@ -71,35 +73,42 @@ export default function MyAccount(props) {
 
   const pickFromGallery = async () => {
     setShowPhotoSource(false);
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission requise', 'Accès galerie nécessaire.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) setUrlImage(result.assets[0].uri);
+    // Wait for modal to fully close before launching picker
+    setTimeout(async () => {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Permission requise', 'Accès galerie nécessaire.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled) setUrlImage(result.assets[0].uri);
+    }, 400);
   };
 
   const pickFromCamera = async () => {
     setShowPhotoSource(false);
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission requise', 'Accès caméra nécessaire.'); return; }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) setUrlImage(result.assets[0].uri);
+    // Wait for modal to fully close before launching camera
+    setTimeout(async () => {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Permission requise', 'Accès caméra nécessaire.'); return; }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled) setUrlImage(result.assets[0].uri);
+    }, 400);
   };
 
   const handleSave = async () => {
-    const link = UrlImage ? await uploadImageToSupabase(UrlImage) : null;
-
-    // Save to photo history if image changed
-    if (link) {
-      var_my_account.child('photoHistory').push(link);
+    let finalUrl = UrlImage;
+    // Only upload if it's a new local file (not already a remote https URL)
+    if (UrlImage && !UrlImage.startsWith('http')) {
+      finalUrl = await uploadImageToSupabase(UrlImage);
+      // Add to photo history only when a new image is uploaded
+      var_my_account.child('photoHistory').push(finalUrl);
     }
 
     const ref_one_account = ref_all_accounts.child(userid);
@@ -110,14 +119,19 @@ export default function MyAccount(props) {
         Pseudo,
         Email,
         Numero,
-        UrlImage: link,
+        UrlImage: finalUrl || null,
       })
       .then(() => {
-        console.log('Compte ajouté !');
-        props.navigation.navigate('ListAccount');
+        // After first account creation, navigate to Home (ListAccount is nested in Home tab)
+        // From the tab, navigate works directly to sibling tabs
+        try {
+          props.navigation.navigate('ListAccount');
+        } catch {
+          props.navigation.replace('Home', { userid });
+        }
       })
       .catch((error) => {
-        console.log(error);
+        Alert.alert('Erreur', error.message);
       });
   };
 

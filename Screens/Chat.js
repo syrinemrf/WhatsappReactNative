@@ -111,6 +111,11 @@ export default function Chat(props) {
 
   const startRecording = async () => {
     try {
+      // Unload any previous recording before creating a new one
+      if (recording) {
+        try { await recording.stopAndUnloadAsync(); } catch {}
+        setRecording(null);
+      }
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission micro refusée'); return; }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
