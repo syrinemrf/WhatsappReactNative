@@ -124,13 +124,9 @@ export default function Groupe(props) {
     return () => ref_gchat.off();
   }, [activeGroup?.id]);
 
-  // Auto-scroll
-  useEffect(() => {
-    if (forumData.length > 0) setTimeout(() => forumRef.current?.scrollToEnd({ animated: false }), 80);
-  }, [forumData.length]);
-  useEffect(() => {
-    if (groupMessages.length > 0) setTimeout(() => groupChatRef.current?.scrollToEnd({ animated: false }), 80);
-  }, [groupMessages.length]);
+  // Auto-scroll helpers
+  const scrollForumToBottom = () => { if (forumRef.current && forumData.length > 0) forumRef.current.scrollToEnd({ animated: false }); };
+  const scrollGroupToBottom = () => { if (groupChatRef.current && groupMessages.length > 0) groupChatRef.current.scrollToEnd({ animated: false }); };
 
   // Keep activeGroup in sync when groups update
   useEffect(() => {
@@ -538,7 +534,8 @@ export default function Groupe(props) {
       <FlatList
         ref={forumRef}
         data={forumData}
-        keyExtractor={(item) => item.key || String(Math.random())}
+        extraData={forumData}
+        keyExtractor={(item) => item.key}
         renderItem={({ item }) =>
           renderMsg(item, item.idsender === userid, () => {
             if (item.idsender === userid) {
@@ -552,6 +549,8 @@ export default function Groupe(props) {
         }
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}
+        onContentSizeChange={scrollForumToBottom}
+        onLayout={scrollForumToBottom}
       />
       {renderInputBar({
         msg: forumMsg, setMsg: setForumMsg,
@@ -595,7 +594,8 @@ export default function Groupe(props) {
         <FlatList
           ref={groupChatRef}
           data={groupMessages}
-          keyExtractor={(item) => item.key || String(Math.random())}
+          extraData={groupMessages}
+          keyExtractor={(item) => item.key}
           renderItem={({ item }) =>
             renderMsg(item, item.idsender === userid, () => {
               if (item.idsender === userid) {
@@ -609,6 +609,8 @@ export default function Groupe(props) {
           }
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}
+          onContentSizeChange={scrollGroupToBottom}
+          onLayout={scrollGroupToBottom}
         />
         {renderInputBar({
           msg: groupMsg, setMsg: setGroupMsg,

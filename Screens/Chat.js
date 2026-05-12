@@ -115,12 +115,12 @@ export default function Chat(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scroll to bottom when new messages arrive - NOT on content size change
-  useEffect(() => {
-    if (data.length > 0) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 80);
+  // Scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    if (flatListRef.current && data.length > 0) {
+      flatListRef.current.scrollToEnd({ animated: false });
     }
-  }, [data.length]);
+  };
 
   // ─── THEME ────────────────────────────────────────────────────────────────
   const saveTheme = async (t) => {
@@ -500,10 +500,14 @@ export default function Chat(props) {
         <FlatList
           ref={flatListRef}
           data={data}
-          keyExtractor={(item) => item.key || String(Math.random())}
+          extraData={data}
+          keyExtractor={(item) => item.key}
           renderItem={renderMessage}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
+          onContentSizeChange={scrollToBottom}
+          onLayout={scrollToBottom}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         />
 
         {/* Image preview */}
