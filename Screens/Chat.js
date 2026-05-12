@@ -9,6 +9,7 @@ import {
   FlatList,
   Image,
   ImageBackground,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -34,15 +35,18 @@ const EMOJIS = [
 ];
 const REACTIONS = ['👍','❤️','😂','😮','😢','😡'];
 
+// Beautiful theme presets with gradient-like descriptions
 const THEME_PRESETS = [
-  { id: 'default', label: 'Défaut',  type: 'image',  value: null },
-  { id: 'white',   label: 'Blanc',   type: 'color',  value: '#F0F0F0' },
-  { id: 'dark',    label: 'Sombre',  type: 'color',  value: '#1A1A2E' },
-  { id: 'teal',    label: 'Menthe',  type: 'color',  value: '#004D40' },
-  { id: 'rose',    label: 'Rose',    type: 'color',  value: '#FCE4EC' },
-  { id: 'ocean',   label: 'Océan',   type: 'color',  value: '#0D47A1' },
-  { id: 'sand',    label: 'Sable',   type: 'color',  value: '#FFF8E1' },
-  { id: 'galaxy',  label: 'Galaxy',  type: 'color',  value: '#12002F' },
+  { id: 'default',    label: 'WhatsApp',  type: 'image',  value: null,      preview: '#128C7E' },
+  { id: 'midnight',   label: 'Minuit',    type: 'color',  value: '#0D1B2A',  preview: '#0D1B2A', dark: true },
+  { id: 'cherry',     label: 'Cerise',    type: 'color',  value: '#1A0005',  preview: '#8B0000', dark: true },
+  { id: 'forest',     label: 'Forêt',     type: 'color',  value: '#0A1F0E',  preview: '#1B5E20', dark: true },
+  { id: 'lavender',   label: 'Lavande',   type: 'color',  value: '#F3E5F5',  preview: '#CE93D8' },
+  { id: 'peach',      label: 'Pêche',     type: 'color',  value: '#FFF3E0',  preview: '#FFCC80' },
+  { id: 'sky',        label: 'Ciel',      type: 'color',  value: '#E1F5FE',  preview: '#81D4FA' },
+  { id: 'galaxy',     label: 'Galaxy',    type: 'color',  value: '#0A001F',  preview: '#4A148C', dark: true },
+  { id: 'rose',       label: 'Rose',      type: 'color',  value: '#FCE4EC',  preview: '#F48FB1' },
+  { id: 'emerald',    label: 'Émeraude',  type: 'color',  value: '#E8F5E9',  preview: '#81C784' },
 ];
 
 export default function Chat(props) {
@@ -61,10 +65,11 @@ export default function Chat(props) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showMediaSearch, setShowMediaSearch] = useState(false);
-  const [theme, setTheme] = useState({ id: 'default', type: 'image', value: null });
+  const [theme, setTheme] = useState({ id: 'default', type: 'image', value: null, dark: false });
   const [showThemeModal, setShowThemeModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [pendingLocation, setPendingLocation] = useState(null);
 
-  // Use ref for recording to avoid stale closure issues
   const recordingRef = useRef(null);
   const flatListRef = useRef(null);
 
@@ -84,7 +89,9 @@ export default function Chat(props) {
     ref_second_istyping.on('value', (snapshot) => setSecondistyping(snapshot.val()));
 
     AsyncStorage.getItem('chat_theme_' + iddiscussion).then((val) => {
-      if (val) setTheme(JSON.parse(val));
+      if (val) {
+        try { setTheme(JSON.parse(val)); } catch {}
+      }
     });
 
     return () => {
@@ -97,21 +104,26 @@ export default function Chat(props) {
   }, []);
 
   const saveTheme = async (t) => {
-    setTheme(t);
-    await AsyncStorage.setItem('chat_theme_' + iddiscussion, JSON.stringify(t));
-    setShowThemeModal(false);
+    try {
+      setTheme(t);
+      setShowThemeModal(false);
+      await AsyncStorage.setItem('chat_theme_' + iddiscussion, JSON.stringify(t));
+    } catch {}
   };
 
   const pickThemeFromGallery = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission requise'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (!result.canceled) {
-      saveTheme({ id: 'custom', type: 'image', value: result.assets[0].uri });
-    }
+    setShowThemeModal(false);
+    setTimeout(async () => {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Permission requise'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
+      if (!result.canceled) {
+        saveTheme({ id: 'custom', label: 'Personnalisé', type: 'image', value: result.assets[0].uri, dark: false });
+      }
+    }, 400);
   };
 
   const uploadImageToSupabase = async (url) => {
@@ -131,11 +143,23 @@ export default function Chat(props) {
     if (!result.canceled) setImageToSend(result.assets[0].uri);
   };
 
-  const sendLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-    const { latitude, longitude } = loc.coords;
+  // Step 1: get location and show confirmation modal
+  const prepareLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission refusée', 'Autorisation de localisation nécessaire.'); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setPendingLocation(loc.coords);
+      setShowLocationModal(true);
+    } catch (e) {
+      Alert.alert('Erreur de localisation', e.message);
+    }
+  };
+
+  // Step 2: confirm and send location
+  const confirmSendLocation = () => {
+    if (!pendingLocation) return;
+    const { latitude, longitude } = pendingLocation;
     const key = ref_chat.push().key;
     ref_chat.child(key).set({
       idsender: currentid, idreceiver: secondid,
@@ -143,6 +167,8 @@ export default function Chat(props) {
       time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
       type: 'location',
     });
+    setShowLocationModal(false);
+    setPendingLocation(null);
   };
 
   const startRecording = async () => {
@@ -168,7 +194,20 @@ export default function Chat(props) {
     }
   };
 
-  const stopRecording = async () => {
+  // Cancel recording without sending
+  const cancelRecording = async () => {
+    setIsRecording(false);
+    try {
+      if (recordingRef.current) {
+        await recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    } catch {}
+  };
+
+  // Stop and SEND recording
+  const stopAndSendRecording = async () => {
     if (!recordingRef.current) return;
     setIsRecording(false);
     try {
@@ -239,10 +278,11 @@ export default function Chat(props) {
     setShowEmoji(false);
   };
 
+  const isDark = !!(theme.dark);
+
   const renderMessage = ({ item }) => {
     const isSender = currentid === item.idsender;
     const reactions = item.reactions ? Object.entries(item.reactions) : [];
-    const isDark = ['dark', 'galaxy', 'ocean', 'teal'].includes(theme.id);
 
     return (
       <TouchableOpacity
@@ -279,8 +319,8 @@ export default function Chat(props) {
                   <Ionicons name="mic" size={20} color="#00897B" />
                 </View>
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.voiceTitle}>Message vocal</Text>
-                  <Text style={styles.voiceHint}>Appuyer pour écouter</Text>
+                  <Text style={[styles.voiceTitle, isDark && !isSender ? { color: '#fff' } : {}]}>Message vocal</Text>
+                  <Text style={[styles.voiceHint, isDark && !isSender ? { color: '#ccc' } : {}]}>Appuyer pour écouter</Text>
                 </View>
                 <Ionicons name="play-circle" size={32} color="#00897B" />
               </TouchableOpacity>
@@ -314,11 +354,15 @@ export default function Chat(props) {
   const mediaMessages = data.filter((m) => m.type === 'image');
 
   const ChatBackground = ({ children }) => {
-    if (theme.type === 'color') {
-      return <View style={[styles.container, { backgroundColor: theme.value }]}>{children}</View>;
+    try {
+      if (theme.type === 'color' && theme.value) {
+        return <View style={[styles.container, { backgroundColor: theme.value }]}>{children}</View>;
+      }
+      const src = (theme.type === 'image' && theme.value) ? { uri: theme.value } : require('../assets/backgroundreact.jpg');
+      return <ImageBackground style={styles.container} source={src}>{children}</ImageBackground>;
+    } catch {
+      return <ImageBackground style={styles.container} source={require('../assets/backgroundreact.jpg')}>{children}</ImageBackground>;
     }
-    const src = theme.value ? { uri: theme.value } : require('../assets/backgroundreact.jpg');
-    return <ImageBackground style={styles.container} source={src}>{children}</ImageBackground>;
   };
 
   return (
@@ -363,74 +407,98 @@ export default function Chat(props) {
           </View>
         )}
 
-        {/* Messages list */}
-        <FlatList
-          ref={flatListRef}
-          data={data}
-          keyExtractor={(_, i) => i.toString()}
-          renderItem={renderMessage}
+        {/* Messages list + input in KeyboardAvoidingView */}
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
-
-        {/* Image preview before send */}
-        {imageToSend && (
-          <View style={styles.previewBar}>
-            <Image source={{ uri: imageToSend }} style={styles.previewImg} />
-            <Text style={{ flex: 1, color: '#004D40', marginLeft: 10, fontSize: 13 }}>Photo prête à envoyer</Text>
-            <TouchableOpacity onPress={() => setImageToSend(null)}>
-              <Ionicons name="close-circle" size={26} color="#c0392b" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Emoji panel */}
-        {showEmoji && (
-          <View style={styles.emojiPanel}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
-              {EMOJIS.map((e) => (
-                <TouchableOpacity key={e} onPress={() => setMessage((m) => m + e)} style={styles.emojiBtn}>
-                  <Text style={{ fontSize: 26 }}>{e}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Input bar */}
-        <View style={styles.inputBar}>
-          <TouchableOpacity onPress={() => setShowEmoji((v) => !v)} style={styles.inputIcon}>
-            <Ionicons name={showEmoji ? 'happy' : 'happy-outline'} size={26} color="#00897B" />
-          </TouchableOpacity>
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            onFocus={() => ref_discussion.child(currentid + 'istyping').set(true)}
-            onBlur={() => ref_discussion.child(currentid + 'istyping').set(false)}
-            placeholder="Message..."
-            placeholderTextColor="#aaa"
-            style={styles.input}
-            multiline
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={data}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={renderMessage}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
-          <TouchableOpacity onPress={pickImageFromCamera} style={styles.inputIcon}>
-            <Ionicons name="camera-outline" size={25} color="#00897B" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={sendLocation} style={styles.inputIcon}>
-            <Ionicons name="location-outline" size={25} color="#00897B" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={isRecording ? stopRecording : startRecording}
-            style={[styles.inputIcon, isRecording && styles.micActive]}
-          >
-            <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={25} color={isRecording ? '#fff' : '#00897B'} />
-          </TouchableOpacity>
-          {(message.trim() || imageToSend) ? (
-            <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
-              <Ionicons name="send" size={20} color="#fff" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+
+          {/* Image preview before send */}
+          {imageToSend && (
+            <View style={styles.previewBar}>
+              <Image source={{ uri: imageToSend }} style={styles.previewImg} />
+              <Text style={{ flex: 1, color: '#004D40', marginLeft: 10, fontSize: 13 }}>Photo prête à envoyer</Text>
+              <TouchableOpacity onPress={() => setImageToSend(null)}>
+                <Ionicons name="close-circle" size={26} color="#c0392b" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Emoji panel */}
+          {showEmoji && (
+            <View style={styles.emojiPanel}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {EMOJIS.map((e) => (
+                  <TouchableOpacity key={e} onPress={() => setMessage((m) => m + e)} style={styles.emojiBtn}>
+                    <Text style={{ fontSize: 26 }}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Recording indicator bar */}
+          {isRecording && (
+            <View style={styles.recordingBar}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>Enregistrement en cours...</Text>
+              <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordBtn}>
+                <Ionicons name="trash-outline" size={22} color="#fff" />
+                <Text style={styles.cancelRecordText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={stopAndSendRecording} style={styles.sendRecordBtn}>
+                <Ionicons name="send" size={18} color="#fff" />
+                <Text style={styles.sendRecordText}>Envoyer</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Input bar */}
+          {!isRecording && (
+            <View style={styles.inputBar}>
+              <TouchableOpacity onPress={() => setShowEmoji((v) => !v)} style={styles.inputIcon}>
+                <Ionicons name={showEmoji ? 'happy' : 'happy-outline'} size={26} color="#00897B" />
+              </TouchableOpacity>
+              <TextInput
+                value={message}
+                onChangeText={setMessage}
+                onFocus={() => {
+                  setShowEmoji(false);
+                  ref_discussion.child(currentid + 'istyping').set(true);
+                }}
+                onBlur={() => ref_discussion.child(currentid + 'istyping').set(false)}
+                placeholder="Message..."
+                placeholderTextColor="#aaa"
+                style={styles.input}
+                multiline
+              />
+              <TouchableOpacity onPress={pickImageFromCamera} style={styles.inputIcon}>
+                <Ionicons name="camera-outline" size={25} color="#00897B" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={prepareLocation} style={styles.inputIcon}>
+                <Ionicons name="location-outline" size={25} color="#00897B" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={startRecording} style={styles.inputIcon}>
+                <Ionicons name="mic-outline" size={25} color="#00897B" />
+              </TouchableOpacity>
+              {(message.trim() || imageToSend) ? (
+                <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
+                  <Ionicons name="send" size={20} color="#fff" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       {/* Full-screen image modal */}
@@ -441,6 +509,35 @@ export default function Chat(props) {
             <Ionicons name="close-circle" size={36} color="#fff" />
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Location confirmation modal */}
+      <Modal visible={showLocationModal} transparent animationType="fade">
+        <View style={styles.locationModalBg}>
+          <View style={styles.locationModalCard}>
+            <Ionicons name="location" size={40} color="#00897B" style={{ marginBottom: 10 }} />
+            <Text style={styles.locationModalTitle}>Partager votre position ?</Text>
+            {pendingLocation && (
+              <Text style={styles.locationModalCoords}>
+                {pendingLocation.latitude.toFixed(5)}, {pendingLocation.longitude.toFixed(5)}
+              </Text>
+            )}
+            <View style={styles.locationModalBtns}>
+              <TouchableOpacity
+                style={[styles.locationBtn, { backgroundColor: '#ECEFF1' }]}
+                onPress={() => { setShowLocationModal(false); setPendingLocation(null); }}
+              >
+                <Text style={[styles.locationBtnText, { color: '#555' }]}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locationBtn, { backgroundColor: '#00897B' }]}
+                onPress={confirmSendLocation}
+              >
+                <Text style={styles.locationBtnText}>Envoyer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Reactions bottom sheet */}
@@ -469,19 +566,25 @@ export default function Chat(props) {
         <TouchableOpacity style={styles.reactModalBg} onPress={() => setShowThemeModal(false)} activeOpacity={1}>
           <View style={[styles.reactPanel, { paddingBottom: 30 }]}>
             <View style={styles.reactHandle} />
-            <Text style={styles.reactTitle}>Thème de la discussion</Text>
+            <Text style={styles.reactTitle}>🎨 Thème de la discussion</Text>
             <View style={styles.themeGrid}>
               {THEME_PRESETS.map((t) => (
                 <TouchableOpacity key={t.id} onPress={() => saveTheme(t)} style={styles.themeChip}>
-                  {t.type === 'image' ? (
+                  {t.id === 'default' ? (
                     <Image source={require('../assets/backgroundreact.jpg')} style={styles.themeChipImg} />
                   ) : (
-                    <View style={[styles.themeChipColor, { backgroundColor: t.value }]} />
+                    <View style={[styles.themeChipColor, { backgroundColor: t.preview }]}>
+                      {t.dark && (
+                        <View style={{ position: 'absolute', bottom: 4, right: 4 }}>
+                          <Ionicons name="moon" size={12} color="rgba(255,255,255,0.7)" />
+                        </View>
+                      )}
+                    </View>
                   )}
                   <Text style={styles.themeChipLabel}>{t.label}</Text>
                   {theme.id === t.id && (
                     <View style={styles.themeCheck}>
-                      <Ionicons name="checkmark-circle" size={18} color="#25D366" />
+                      <Ionicons name="checkmark-circle" size={20} color="#25D366" />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -490,7 +593,12 @@ export default function Chat(props) {
                 <View style={[styles.themeChipColor, { backgroundColor: '#E8EAF6', alignItems: 'center', justifyContent: 'center' }]}>
                   <Ionicons name="image-outline" size={24} color="#5C6BC0" />
                 </View>
-                <Text style={styles.themeChipLabel}>Galerie</Text>
+                <Text style={styles.themeChipLabel}>Ma photo</Text>
+                {theme.id === 'custom' && (
+                  <View style={styles.themeCheck}>
+                    <Ionicons name="checkmark-circle" size={20} color="#25D366" />
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -545,7 +653,7 @@ const styles = StyleSheet.create({
   },
   senderBubble: { backgroundColor: '#DCF8C6', borderTopRightRadius: 4 },
   receiverBubble: { backgroundColor: '#fff', borderTopLeftRadius: 4, elevation: 2 },
-  receiverBubbleDark: { backgroundColor: 'rgba(255,255,255,0.13)', borderTopLeftRadius: 4 },
+  receiverBubbleDark: { backgroundColor: 'rgba(255,255,255,0.15)', borderTopLeftRadius: 4 },
   msgText: { fontSize: 15, lineHeight: 21 },
   senderText: { color: '#1B3A2F' },
   receiverText: { color: '#1A1A1A' },
@@ -591,6 +699,32 @@ const styles = StyleSheet.create({
   },
   emojiBtn: { margin: 3, padding: 4 },
 
+  recordingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#B71C1C',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  recordingDot: {
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#fff',
+  },
+  recordingText: { flex: 1, color: '#fff', fontWeight: '600', fontSize: 14 },
+  cancelRecordBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, gap: 4,
+  },
+  cancelRecordText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  sendRecordBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#25D366',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, gap: 4,
+  },
+  sendRecordText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
   inputBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F6F6F6', paddingVertical: 8, paddingHorizontal: 8,
@@ -603,7 +737,6 @@ const styles = StyleSheet.create({
     fontSize: 15, color: '#1A1A1A', maxHeight: 110,
     marginHorizontal: 6, borderWidth: 1, borderColor: '#E0E0E0',
   },
-  micActive: { backgroundColor: '#E53935', borderRadius: 20 },
   sendBtn: {
     backgroundColor: '#075E54', borderRadius: 22,
     width: 42, height: 42, alignItems: 'center', justifyContent: 'center',
@@ -613,6 +746,28 @@ const styles = StyleSheet.create({
   imgModalBg: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   imgModalImg: { width: '100%', height: '85%' },
   imgModalClose: { position: 'absolute', top: 50, right: 16 },
+
+  locationModalBg: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  locationModalCard: {
+    backgroundColor: '#fff', borderRadius: 24,
+    padding: 28, width: '82%', alignItems: 'center',
+    elevation: 10,
+  },
+  locationModalTitle: {
+    fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 8, textAlign: 'center',
+  },
+  locationModalCoords: {
+    fontSize: 12, color: '#777', marginBottom: 20, textAlign: 'center',
+  },
+  locationModalBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  locationBtn: {
+    flex: 1, borderRadius: 20, paddingVertical: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  locationBtnText: { fontWeight: '700', fontSize: 15, color: '#fff' },
 
   reactModalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   reactPanel: {
@@ -626,7 +781,8 @@ const styles = StyleSheet.create({
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 8 },
   themeChip: { alignItems: 'center', margin: 8, width: 70 },
   themeChipImg: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: '#25D366' },
-  themeChipColor: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: '#E0E0E0' },
-  themeChipLabel: { fontSize: 11, color: '#555', marginTop: 5, fontWeight: '500' },
+  themeChipColor: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: '#E0E0E0', overflow: 'hidden' },
+  themeChipLabel: { fontSize: 11, color: '#555', marginTop: 5, fontWeight: '500', textAlign: 'center' },
   themeCheck: { position: 'absolute', top: -4, right: -4 },
 });
+

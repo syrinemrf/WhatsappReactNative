@@ -386,7 +386,8 @@ const styles = StyleSheet.create({
   },
   lockedText: {
     fontSize: 15,
-    color: '#78909C',
+    color: '#004D40',
+    fontWeight: '500',
   },
   btnSave: {
     backgroundColor: '#00897B',
