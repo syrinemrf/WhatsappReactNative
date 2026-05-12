@@ -12,6 +12,7 @@ import {
   Linking,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -181,9 +182,11 @@ export default function Groupe(props) {
     try {
       let msg = textContent; let type = 'text';
       if (imgContent) { msg = await uploadImage(imgContent); type = 'image'; }
-      await ref_forum.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
+      await firebase.database().ref('Forum').push({
+        idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type,
+      });
     } catch (e) {
-      Alert.alert("Erreur d'envoi", e.message);
+      Alert.alert("Erreur d'envoi", String(e?.message || e));
       if (!imgContent) setForumMsg(textContent);
     }
   };
@@ -261,10 +264,11 @@ export default function Groupe(props) {
     try {
       let msg = textContent; let type = 'text';
       if (imgContent) { msg = await uploadImage(imgContent); type = 'image'; }
-      const ref_gchat = ref_all_groups.child(activeGroup.id).child('chat');
-      await ref_gchat.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
+      await firebase.database().ref('AllGroups/' + activeGroup.id + '/chat').push({
+        idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type,
+      });
     } catch (e) {
-      Alert.alert("Erreur d'envoi", e.message);
+      Alert.alert("Erreur d'envoi", String(e?.message || e));
       if (!imgContent) setGroupMsg(textContent);
     }
   };
@@ -514,12 +518,15 @@ export default function Groupe(props) {
           <TouchableOpacity onPress={onStartRecord} style={styles.inputIcon}>
             <Ionicons name="mic-outline" size={23} color="#00897B" />
           </TouchableOpacity>
-          <TouchableOpacity
+          <Pressable
             onPress={onSend}
-            disabled={!msg.trim() && !imageToSend}
-            style={[styles.sendBtn, { opacity: (msg.trim() || imageToSend) ? 1 : 0 }]}>
+            style={({ pressed }) => [
+              styles.sendBtn,
+              { opacity: (msg.trim() || imageToSend) ? (pressed ? 0.7 : 1) : 0 },
+            ]}
+            pointerEvents={(msg.trim() || imageToSend) ? 'auto' : 'none'}>
             <Ionicons name="send" size={18} color="#fff" />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
     </>
@@ -527,7 +534,7 @@ export default function Groupe(props) {
 
   // ─── FORUM VIEW ──────────────────────────────────────────────────────────────
   const renderForum = () => (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={60}>
       <FlatList
         ref={forumRef}
         data={forumData}
@@ -584,7 +591,7 @@ export default function Groupe(props) {
         )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={60}>
         <FlatList
           ref={groupChatRef}
           data={groupMessages}

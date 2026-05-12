@@ -13,6 +13,7 @@ import {
   Linking,
   Modal,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -287,7 +288,7 @@ export default function Chat(props) {
     const textContent = message.trim();
     const imgContent  = imageToSend;
     if (!textContent && !imgContent) return;
-    // Clear UI immediately (optimistic) so user can type next message right away
+    // Optimistic: clear UI immediately
     setMessage('');
     setImageToSend(null);
     setShowEmoji(false);
@@ -298,17 +299,19 @@ export default function Chat(props) {
         msg  = await uploadImageToSupabase(imgContent);
         type = 'image';
       }
-      const newRef = ref_chat.push();
-      await newRef.set({
-        idsender: currentid, idreceiver: secondid,
-        message: msg,
-        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-        type,
-      });
-      ref_discussion.child(currentid + 'istyping').set(false);
+      // Use explicit path — avoids stale ref objects
+      await firebase.database()
+        .ref('AllMessages/' + iddiscussion + '/chat')
+        .push({
+          idsender: currentid,
+          idreceiver: secondid,
+          message: msg,
+          time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          type,
+        });
+      firebase.database().ref('AllMessages/' + iddiscussion + '/' + currentid + 'istyping').set(false);
     } catch (e) {
-      Alert.alert("Erreur d'envoi", e.message);
-      // Restore text so user doesn't lose what they typed
+      Alert.alert("Erreur d'envoi", String(e?.message || e));
       if (!imgContent) setMessage(textContent);
     }
   };
@@ -484,8 +487,8 @@ export default function Chat(props) {
       {/* Keyboard-aware wrapper */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
         {/* Messages list */}
         <FlatList
@@ -566,12 +569,15 @@ export default function Chat(props) {
             <TouchableOpacity onPress={startRecording} style={styles.inputIcon}>
               <Ionicons name="mic-outline" size={25} color="#00897B" />
             </TouchableOpacity>
-            <TouchableOpacity
+            <Pressable
               onPress={sendMessage}
-              disabled={!message.trim() && !imageToSend}
-              style={[styles.sendBtn, { opacity: (message.trim() || imageToSend) ? 1 : 0 }]}>
+              style={({ pressed }) => [
+                styles.sendBtn,
+                { opacity: (message.trim() || imageToSend) ? (pressed ? 0.7 : 1) : 0 },
+              ]}
+              pointerEvents={(message.trim() || imageToSend) ? 'auto' : 'none'}>
               <Ionicons name="send" size={20} color="#fff" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         )}
       </KeyboardAvoidingView>
