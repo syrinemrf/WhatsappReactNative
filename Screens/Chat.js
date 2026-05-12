@@ -54,7 +54,8 @@ export default function Chat(props) {
   const secondid     = props.route.params.secondid;
   const secondPseudo = props.route.params.secondPseudo || 'Chat';
 
-  const [data,            setData]            = useState([]);
+  const messagesRef = useRef([]);
+  const [renderTick,      setRenderTick]      = useState(0);
   const [message,         setMessage]         = useState('');
   const [secondistyping,  setSecondistyping]  = useState(false);
   const [imageToSend,     setImageToSend]     = useState(null);
@@ -94,7 +95,8 @@ export default function Chat(props) {
       const d = [];
       snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
       console.log('[handleMessages] count:', d.length, 'last:', d[d.length-1]?.message);
-      setData([...d]);
+      messagesRef.current = d;
+      setRenderTick((t) => t + 1);
     };
     ref_chat.on('value', handleMessages);
     ref_second_istyping.on('value', (snap) => setSecondistyping(!!snap.val()));
@@ -121,11 +123,11 @@ export default function Chat(props) {
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
-    if (data.length > 0) {
+    if (messagesRef.current.length > 0) {
       const t = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 80);
       return () => clearTimeout(t);
     }
-  }, [data.length]);
+  }, [renderTick]);
 
   // ─── THEME ────────────────────────────────────────────────────────────────
   const saveTheme = async (t) => {
@@ -426,28 +428,20 @@ export default function Chat(props) {
     );
   };
 
-  const mediaMessages = data.filter((m) => m.type === 'image');
+  const mediaMessages = messagesRef.current.filter((m) => m.type === 'image');
 
   // ─── BACKGROUND ───────────────────────────────────────────────────────────
-  const renderBackground = (children) => {
-    try {
-      if (theme.type === 'color' && theme.value) {
-        return <View style={[styles.container, { backgroundColor: theme.value }]}>{children}</View>;
-      }
-      const src = theme.type === 'image' && theme.value
-        ? { uri: theme.value }
-        : require('../assets/backgroundreact.jpg');
-      return <ImageBackground style={styles.container} source={src}>{children}</ImageBackground>;
-    } catch {
-      return (
-        <ImageBackground style={styles.container} source={require('../assets/backgroundreact.jpg')}>
-          {children}
-        </ImageBackground>
-      );
-    }
-  };
+  const bgSource = theme.type === 'image' && theme.value
+    ? { uri: theme.value }
+    : require('../assets/backgroundreact.jpg');
 
-  return renderBackground(
+  return (
+    <View style={styles.container}>
+      {/* Background layer — absolutely positioned so root <View> type never changes */}
+      {theme.type === 'color' && theme.value
+        ? <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.value }]} />
+        : <ImageBackground source={bgSource} style={StyleSheet.absoluteFill} />
+      }
     <SafeAreaView style={{ flex: 1 }}>
       <StatusBar barStyle="light-content" backgroundColor="#075E54" />
 
@@ -501,13 +495,14 @@ export default function Chat(props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
-        {/* Messages list — ScrollView instead of FlatList: reliable re-render in New Architecture */}
+        {/* Messages list */}
         <ScrollView
           ref={flatListRef}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         >
-          {data.map((item) => (
+          {messagesRef.current.map((item) => (
             <View key={item.key}>
               {renderMessage({ item })}
             </View>
@@ -731,6 +726,7 @@ export default function Chat(props) {
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
+    </View>
   );
 }
 
