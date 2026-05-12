@@ -292,6 +292,8 @@ export default function Chat(props) {
     setMessage('');
     setImageToSend(null);
     setShowEmoji(false);
+    console.log('[sendMessage] START — text:', JSON.stringify(textContent), 'img:', !!imgContent);
+    console.log('[sendMessage] iddiscussion:', iddiscussion, 'currentid:', currentid, 'secondid:', secondid);
     try {
       let msg  = textContent;
       let type = 'text';
@@ -299,9 +301,11 @@ export default function Chat(props) {
         msg  = await uploadImageToSupabase(imgContent);
         type = 'image';
       }
+      const dbPath = 'AllMessages/' + iddiscussion + '/chat';
+      console.log('[sendMessage] pushing to path:', dbPath, 'payload:', { idsender: currentid, message: msg, type });
       // Use explicit path — avoids stale ref objects
-      await firebase.database()
-        .ref('AllMessages/' + iddiscussion + '/chat')
+      const pushResult = await firebase.database()
+        .ref(dbPath)
         .push({
           idsender: currentid,
           idreceiver: secondid,
@@ -309,9 +313,11 @@ export default function Chat(props) {
           time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
           type,
         });
+      console.log('[sendMessage] push OK — key:', pushResult?.key);
       firebase.database().ref('AllMessages/' + iddiscussion + '/' + currentid + 'istyping').set(false);
     } catch (e) {
-      Alert.alert("Erreur d'envoi", String(e?.message || e));
+      console.error('[sendMessage] ERREUR:', e);
+      Alert.alert("Erreur d'envoi", String(e?.message || e?.code || JSON.stringify(e)));
       if (!imgContent) setMessage(textContent);
     }
   };
