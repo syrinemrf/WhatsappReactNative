@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   FlatList,
   Image,
@@ -23,6 +23,14 @@ export default function ListAccount(props) {
   const [search, setSearch] = useState('');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedUser, setselectedUser] = useState(null);
+  // ─ In-app call states
+  const [showCallModal, setShowCallModal]   = useState(false);
+  const [callContact,   setCallContact]     = useState(null);
+  const [callConnected, setCallConnected]   = useState(false);
+  const [callDuration,  setCallDuration]    = useState(0);
+  const [incomingCall,  setIncomingCall]    = useState(null);
+  const callTimerRef  = useRef(null);
+  const callKeyRef    = useRef(null);
 
   useEffect(() => {
     ref_all_accounts.on('value', (snapshot) => {
@@ -32,10 +40,68 @@ export default function ListAccount(props) {
       });
       setdata(d);
     });
+    // Incoming call listener
+    const ref_incoming = database.ref('calls').orderByChild('to').equalTo(userid);
+    ref_incoming.on('value', (snapshot) => {
+      let found = null;
+      snapshot.forEach((call) => {
+        if (call.val()?.status === 'ringing') found = { ...call.val(), id: call.key };
+      });
+      setIncomingCall(found);
+    });
     return () => {
       ref_all_accounts.off();
+      ref_incoming.off();
     };
   }, []);
+
+  const startCall = (contact) => {
+    setCallContact(contact);
+    setCallConnected(false);
+    setCallDuration(0);
+    setShowCallModal(true);
+    // Signal via Firebase
+    const callKey = database.ref('calls').push().key;
+    callKeyRef.current = callKey;
+    database.ref('calls').child(callKey).set({
+      from: userid, to: contact.Id, status: 'ringing', startedAt: Date.now(),
+    });
+    // Auto-connect after 4 seconds
+    setTimeout(() => {
+      setCallConnected(true);
+      callTimerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
+    }, 4000);
+  };
+
+  const endCall = () => {
+    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+    if (callKeyRef.current) { database.ref('calls').child(callKeyRef.current).remove(); callKeyRef.current = null; }
+    setShowCallModal(false); setCallContact(null); setCallConnected(false); setCallDuration(0);
+  };
+
+  const answerIncomingCall = () => {
+    if (!incomingCall) return;
+    database.ref('calls').child(incomingCall.id).update({ status: 'answered' });
+    setCallContact(data.find((u) => u.Id === incomingCall.from) || { Pseudo: 'Utilisateur' });
+    setCallConnected(true);
+    setCallDuration(0);
+    callKeyRef.current = incomingCall.id;
+    setIncomingCall(null);
+    setShowCallModal(true);
+    callTimerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
+  };
+
+  const declineIncomingCall = () => {
+    if (!incomingCall) return;
+    database.ref('calls').child(incomingCall.id).remove();
+    setIncomingCall(null);
+  };
+
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   const filteredData = data.filter(
     (item) =>
@@ -89,11 +155,7 @@ export default function ListAccount(props) {
 
             <TouchableOpacity
               style={styles.callButton}
-              onPress={() =>
-                item.Numero
-                  ? Linking.openURL(`tel:${item.Numero}`)
-                  : alert('Numéro non disponible')
-              }
+              onPress={() => startCall(item)}
             >
               <Ionicons name="call" size={20} color="#00897B" />
             </TouchableOpacity>
@@ -186,6 +248,58 @@ export default function ListAccount(props) {
               <Ionicons name="chatbubbles" size={18} color="#fff" />
               <Text style={styles.chatFromModalText}> Ouvrir la conversation</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* In-app calling modal */}
+      <Modal visible={showCallModal} transparent animationType="fade">
+        <View style={styles.callModalBg}>
+          <View style={styles.callCard}>
+            {callContact?.UrlImage
+              ? <Image source={{ uri: callContact.UrlImage }} style={styles.callAvatar} />
+              : <View style={[styles.callAvatar, styles.callAvatarPlaceholder]}>
+                  <Ionicons name="person" size={48} color="#fff" />
+                </View>
+            }
+            <Text style={styles.callName}>{callContact?.Pseudo || callContact?.Nom || 'Utilisateur'}</Text>
+            <Text style={styles.callStatus}>
+              {callConnected ? formatDuration(callDuration) : 'Appel en cours...'}
+            </Text>
+            <View style={styles.callActions}>
+              <TouchableOpacity style={styles.callMuteBtn}>
+                <Ionicons name="mic-off-outline" size={26} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.callHangupBtn} onPress={endCall}>
+                <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.callSpeakerBtn}>
+                <Ionicons name="volume-high-outline" size={26} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Incoming call modal */}
+      <Modal visible={!!incomingCall} transparent animationType="slide">
+        <View style={styles.incomingCallBg}>
+          <View style={styles.incomingCallCard}>
+            <View style={styles.incomingCallAvatar}>
+              <Ionicons name="person" size={44} color="#fff" />
+            </View>
+            <Text style={styles.incomingCallName}>
+              {data.find((u) => u.Id === incomingCall?.from)?.Pseudo || 'Utilisateur'}
+            </Text>
+            <Text style={styles.incomingCallLabel}>Appel entrant...</Text>
+            <View style={styles.incomingCallActions}>
+              <TouchableOpacity style={styles.declineBtn} onPress={declineIncomingCall}>
+                <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.answerBtn} onPress={answerIncomingCall}>
+                <Ionicons name="call" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -414,6 +528,62 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  // Calling modal styles
+  callModalBg: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center',
+  },
+  callCard: {
+    backgroundColor: '#075E54', borderRadius: 28, padding: 36, width: '82%', alignItems: 'center', elevation: 12,
+  },
+  callAvatar: {
+    width: 110, height: 110, borderRadius: 55, borderWidth: 3, borderColor: '#C9A84C', marginBottom: 18,
+  },
+  callAvatarPlaceholder: {
+    backgroundColor: '#00897B', alignItems: 'center', justifyContent: 'center',
+  },
+  callName: {
+    fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 6, textAlign: 'center',
+  },
+  callStatus: {
+    fontSize: 16, color: '#B2DFDB', marginBottom: 36, letterSpacing: 1,
+  },
+  callActions: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', width: '100%',
+  },
+  callMuteBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 30, width: 56, height: 56, alignItems: 'center', justifyContent: 'center',
+  },
+  callHangupBtn: {
+    backgroundColor: '#c0392b', borderRadius: 35, width: 70, height: 70, alignItems: 'center', justifyContent: 'center', elevation: 4,
+  },
+  callSpeakerBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 30, width: 56, height: 56, alignItems: 'center', justifyContent: 'center',
+  },
+  incomingCallBg: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 60,
+  },
+  incomingCallCard: {
+    backgroundColor: '#075E54', borderRadius: 28, padding: 28, width: '90%', alignItems: 'center', elevation: 14,
+  },
+  incomingCallAvatar: {
+    width: 90, height: 90, borderRadius: 45, backgroundColor: '#00897B', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14, borderWidth: 3, borderColor: '#C9A84C',
+  },
+  incomingCallName: {
+    fontSize: 22, fontWeight: 'bold', color: '#fff', marginBottom: 4,
+  },
+  incomingCallLabel: {
+    fontSize: 14, color: '#B2DFDB', marginBottom: 28,
+  },
+  incomingCallActions: {
+    flexDirection: 'row', gap: 40, alignItems: 'center',
+  },
+  declineBtn: {
+    backgroundColor: '#c0392b', borderRadius: 35, width: 68, height: 68, alignItems: 'center', justifyContent: 'center', elevation: 4,
+  },
+  answerBtn: {
+    backgroundColor: '#27ae60', borderRadius: 35, width: 68, height: 68, alignItems: 'center', justifyContent: 'center', elevation: 4,
   },
 });
 

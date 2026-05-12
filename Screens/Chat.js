@@ -71,11 +71,11 @@ export default function Chat(props) {
   const [allContacts,     setAllContacts]     = useState([]);
   const [showForwardModal,setShowForwardModal]= useState(false);
   const [forwardImageUrl, setForwardImageUrl] = useState(null);
-  const [isSending,       setIsSending]       = useState(false);
 
-  const recordingRef = useRef(null);
-  const flatListRef  = useRef(null);
-  const inputRef     = useRef(null);
+  const recordingRef  = useRef(null);
+  const flatListRef   = useRef(null);
+  const inputRef      = useRef(null);
+  const isSendingRef  = useRef(false);
 
   const iddiscussion = currentid > secondid
     ? currentid + secondid
@@ -98,18 +98,16 @@ export default function Chat(props) {
       if (val) { try { setTheme(JSON.parse(val)); } catch {} }
     });
 
-    // Load contacts for forward feature
-    database.ref('allaccounts').on('value', (snap) => {
+    // Load contacts for forward feature (once — no live updates needed here)
+    database.ref('allaccounts').once('value').then((snap) => {
       const d = [];
       snap.forEach((u) => { if (u.val() && u.val().Id !== currentid) d.push(u.val()); });
       setAllContacts(d);
     });
 
     return () => {
-      database.ref('allaccounts').off();
       ref_chat.off('value', handleMessages);
       ref_second_istyping.off();
-      database.ref('allaccounts').off();
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
       }
@@ -287,17 +285,16 @@ export default function Chat(props) {
 
   // ─── SEND ─────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (isSending) return;
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
     try {
       let finalMessage = message.trim();
       let type = 'text';
       if (imageToSend) {
-        setIsSending(true);
         finalMessage = await uploadImageToSupabase(imageToSend);
         type = 'image';
       }
       if (!finalMessage) return;
-      setIsSending(true);
       await ref_chat.push().set({
         idsender: currentid, idreceiver: secondid,
         message: finalMessage,
@@ -308,12 +305,10 @@ export default function Chat(props) {
       setImageToSend(null);
       setMessage('');
       setShowEmoji(false);
-      // Restore focus so user can immediately type next message
-      setTimeout(() => inputRef.current?.focus(), 50);
     } catch (e) {
       Alert.alert("Erreur d'envoi", e.message);
     } finally {
-      setIsSending(false);
+      isSendingRef.current = false;
     }
   };
 
@@ -553,9 +548,8 @@ export default function Chat(props) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={sendMessage}
-              disabled={isSending || (!message.trim() && !imageToSend)}
-              style={[styles.sendBtn, { opacity: (message.trim() || imageToSend) ? (isSending ? 0.5 : 1) : 0 }]}>
-              <Ionicons name={isSending ? 'time-outline' : 'send'} size={20} color="#fff" />
+              style={[styles.sendBtn, { opacity: (message.trim() || imageToSend) ? 1 : 0 }]}>
+              <Ionicons name="send" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         )}

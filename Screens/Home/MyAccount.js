@@ -61,7 +61,7 @@ export default function MyAccount(props) {
         // Support both old format (plain string) and new format ({url, savedAt})
         const url = typeof val === 'string' ? val : val?.url;
         const savedAt = typeof val === 'string' ? null : val?.savedAt;
-        if (url) hist.push({ url, savedAt });
+        if (url) hist.push({ key: item.key, url, savedAt });
       });
       setPhotoHistory(hist.reverse());
     });
@@ -166,6 +166,16 @@ export default function MyAccount(props) {
     ]);
   };
 
+  const deletePhotoFromHistory = (key) => {
+    Alert.alert('Supprimer', "Supprimer cette photo de l'historique ?", [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer', style: 'destructive',
+        onPress: () => var_my_account.child('photoHistory').child(key).remove(),
+      },
+    ]);
+  };
+
   return (
     <ImageBackground source={require('../../assets/backgroundreact.jpg')} style={styles.container}>
       <StatusBar style="dark" />
@@ -257,26 +267,35 @@ export default function MyAccount(props) {
             ) : (
               <ScrollView contentContainerStyle={styles.historyGrid}>
                 {photoHistory.map((item, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => {
-                      setUrlImage(item.url);
-                      setShowHistory(false);
-                    }}
-                    style={{ alignItems: 'center', margin: 4 }}
-                  >
-                    <Image source={{ uri: item.url }} style={styles.historyThumb} />
-                    {i === 0 && (
-                      <View style={styles.currentBadge}>
-                        <Text style={{ color: '#fff', fontSize: 10 }}>Récente</Text>
-                      </View>
-                    )}
+                  <View key={i} style={{ alignItems: 'center', margin: 4 }}>
+                    <View style={{ position: 'relative' }}>
+                      <Image source={{ uri: item.url }} style={styles.historyThumb} />
+                      {/* Delete button */}
+                      <TouchableOpacity
+                        style={styles.historyDeleteBtn}
+                        onPress={() => deletePhotoFromHistory(item.key)}
+                      >
+                        <Ionicons name="close" size={13} color="#fff" />
+                      </TouchableOpacity>
+                      {i === 0 && (
+                        <View style={styles.currentBadge}>
+                          <Text style={{ color: '#fff', fontSize: 10 }}>Récente</Text>
+                        </View>
+                      )}
+                    </View>
+                    {/* Use as profile */}
+                    <TouchableOpacity
+                      style={styles.usePhotoBtn}
+                      onPress={() => { setUrlImage(item.url); setShowHistory(false); }}
+                    >
+                      <Text style={styles.usePhotoBtnText}>Utiliser</Text>
+                    </TouchableOpacity>
                     {item.savedAt && (
-                      <Text style={{ fontSize: 9, color: '#90A4AE', marginTop: 2, textAlign: 'center', maxWidth: 70 }}>
+                      <Text style={{ fontSize: 9, color: '#90A4AE', marginTop: 1, textAlign: 'center', maxWidth: 80 }}>
                         {new Date(item.savedAt).toLocaleDateString('fr-FR')}
                       </Text>
                     )}
-                  </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             )}
@@ -510,6 +529,29 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingVertical: 10,
     paddingHorizontal: 30,
+  },
+  historyDeleteBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(192,57,43,0.85)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  usePhotoBtn: {
+    marginTop: 4,
+    backgroundColor: '#00897B',
+    borderRadius: 10,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+  },
+  usePhotoBtnText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
 

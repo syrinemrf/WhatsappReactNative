@@ -75,12 +75,12 @@ export default function Groupe(props) {
   const [showAddMembers,   setShowAddMembers]   = useState(false);
   const [selectedImage,    setSelectedImage]    = useState(null);
   const [showImgModal,     setShowImgModal]     = useState(false);
-  const [forumIsSending,   setForumIsSending]   = useState(false);
-  const [groupIsSending,   setGroupIsSending]   = useState(false);
   const groupChatRef    = useRef(null);
   const groupRecordRef  = useRef(null);
   const forumInputRef   = useRef(null);
   const groupInputRef   = useRef(null);
+  const forumSendRef    = useRef(false);
+  const groupSendRef    = useRef(false);
 
   // ─── Listeners ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function Groupe(props) {
       setGroups(d.filter((g) => g.members && g.members[userid]));
     });
 
-    ref_all_accounts.on('value', (snapshot) => {
+    ref_all_accounts.once('value').then((snapshot) => {
       const d = [];
       snapshot.forEach((u) => { if (u.val()) d.push(u.val()); });
       setAllUsers(d.filter((u) => u.Id !== userid));
@@ -110,7 +110,6 @@ export default function Groupe(props) {
     return () => {
       ref_forum.off();
       ref_all_groups.off();
-      ref_all_accounts.off();
     };
   }, []);
 
@@ -177,17 +176,16 @@ export default function Groupe(props) {
 
   // ─── FORUM actions ──────────────────────────────────────────────────────────
   const sendForumMsg = async () => {
-    if (forumIsSending) return;
+    if (forumSendRef.current) return;
+    forumSendRef.current = true;
     try {
       let msg = forumMsg.trim();
       let type = 'text';
-      if (forumImageToSend) { setForumIsSending(true); msg = await uploadImage(forumImageToSend); type = 'image'; }
+      if (forumImageToSend) { msg = await uploadImage(forumImageToSend); type = 'image'; }
       if (!msg) return;
-      setForumIsSending(true);
       await ref_forum.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
       setForumMsg(''); setForumImageToSend(null); setShowForumEmoji(false);
-      setTimeout(() => forumInputRef.current?.focus(), 50);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { setForumIsSending(false); }
+    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { forumSendRef.current = false; }
   };
 
   const pickForumCamera = async () => {
@@ -255,18 +253,17 @@ export default function Groupe(props) {
 
   // ─── GROUP actions ──────────────────────────────────────────────────────────
   const sendGroupMsg = async () => {
-    if (!activeGroup || groupIsSending) return;
+    if (!activeGroup || groupSendRef.current) return;
+    groupSendRef.current = true;
     try {
       let msg = groupMsg.trim();
       let type = 'text';
-      if (groupImageToSend) { setGroupIsSending(true); msg = await uploadImage(groupImageToSend); type = 'image'; }
+      if (groupImageToSend) { msg = await uploadImage(groupImageToSend); type = 'image'; }
       if (!msg) return;
-      setGroupIsSending(true);
       const ref_gchat = ref_all_groups.child(activeGroup.id).child('chat');
       await ref_gchat.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
       setGroupMsg(''); setGroupImageToSend(null); setShowGroupEmoji(false);
-      setTimeout(() => groupInputRef.current?.focus(), 50);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { setGroupIsSending(false); }
+    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { groupSendRef.current = false; }
   };
 
   const pickGroupCamera = async () => {
@@ -342,11 +339,14 @@ export default function Groupe(props) {
   const createGroup = async () => {
     if (!newGroupName.trim()) { Alert.alert('Nom requis'); return; }
     if (selectedMembers.length === 0) { Alert.alert('Selectionnez au moins un membre'); return; }
-    const key = ref_all_groups.push().key;
-    const members = { [userid]: true };
-    selectedMembers.forEach((id) => { members[id] = true; });
-    await ref_all_groups.child(key).set({ id: key, name: newGroupName.trim(), creatorId: userid, members, createdAt: new Date().toLocaleString() });
-    setShowCreateModal(false); setNewGroupName(''); setSelectedMembers([]);
+    try {
+      const key = ref_all_groups.push().key;
+      const members = { [userid]: true };
+      selectedMembers.forEach((id) => { members[id] = true; });
+      await ref_all_groups.child(key).set({ id: key, name: newGroupName.trim(), creatorId: userid, members, createdAt: new Date().toLocaleString() });
+      setShowCreateModal(false); setNewGroupName(''); setSelectedMembers([]);
+      setActiveTab('groups');
+    } catch (e) { Alert.alert('Erreur création', e.message); }
   };
 
   const deleteGroup = (group) => {
@@ -441,7 +441,7 @@ export default function Groupe(props) {
   // ─── Input bar (shared) ──────────────────────────────────────────────────────
   const renderInputBar = ({
     msg, setMsg, imageToSend, setImageToSend,
-    showEmoji, setShowEmoji, isRecording, isSending,
+    showEmoji, setShowEmoji, isRecording,
     onCamera, onLocation, onStartRecord, onCancelRecord, onSendRecord, onSend,
     inputRef,
   }) => (
@@ -497,9 +497,8 @@ export default function Groupe(props) {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onSend}
-            disabled={isSending || (!msg.trim() && !imageToSend)}
-            style={[styles.sendBtn, { opacity: (msg.trim() || imageToSend) ? (isSending ? 0.5 : 1) : 0 }]}>
-            <Ionicons name={isSending ? 'time-outline' : 'send'} size={18} color="#fff" />
+            style={[styles.sendBtn, { opacity: (msg.trim() || imageToSend) ? 1 : 0 }]}>
+            <Ionicons name="send" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
       )}
@@ -523,7 +522,7 @@ export default function Groupe(props) {
         msg: forumMsg, setMsg: setForumMsg,
         imageToSend: forumImageToSend, setImageToSend: setForumImageToSend,
         showEmoji: showForumEmoji, setShowEmoji: setShowForumEmoji,
-        isRecording: forumIsRecording, isSending: forumIsSending,
+        isRecording: forumIsRecording,
         onCamera: pickForumCamera,
         onLocation: prepareForumLocation,
         onStartRecord: startForumRecording,
@@ -572,7 +571,7 @@ export default function Groupe(props) {
           msg: groupMsg, setMsg: setGroupMsg,
           imageToSend: groupImageToSend, setImageToSend: setGroupImageToSend,
           showEmoji: showGroupEmoji, setShowEmoji: setShowGroupEmoji,
-          isRecording: groupIsRecording, isSending: groupIsSending,
+          isRecording: groupIsRecording,
           onCamera: pickGroupCamera,
           onLocation: prepareGroupLocation,
           onStartRecord: startGroupRecording,
