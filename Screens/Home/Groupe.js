@@ -90,13 +90,13 @@ export default function Groupe(props) {
 
     ref_forum.on('value', (snapshot) => {
       const d = [];
-      snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
+      snapshot.forEach((m) => { d.push({ ...m.val(), key: m.key }); });
       setForumData(d);
     });
 
     ref_all_groups.on('value', (snapshot) => {
       const d = [];
-      snapshot.forEach((g) => d.push({ ...g.val(), id: g.key }));
+      snapshot.forEach((g) => { d.push({ ...g.val(), id: g.key }); });
       setGroups(d.filter((g) => g.members && g.members[userid]));
     });
 
@@ -118,7 +118,7 @@ export default function Groupe(props) {
     const ref_gchat = ref_all_groups.child(activeGroup.id).child('chat');
     ref_gchat.on('value', (snapshot) => {
       const d = [];
-      snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
+      snapshot.forEach((m) => { d.push({ ...m.val(), key: m.key }); });
       setGroupMessages(d);
     });
     return () => ref_gchat.off();

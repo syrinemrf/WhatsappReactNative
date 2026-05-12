@@ -101,7 +101,7 @@ export default function Chat(props) {
 
     const handleMessages = (snapshot) => {
       const d = [];
-      snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
+      snapshot.forEach((m) => { d.push({ ...m.val(), key: m.key }); });
       console.log('[handleMessages] count:', d.length, 'last:', d[d.length - 1]?.message);
       setData(d);
     };
@@ -509,9 +509,6 @@ export default function Chat(props) {
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
         >
-          <Text style={{ color: 'red', textAlign: 'center', fontSize: 10 }}>
-            msgs={data.length}
-          </Text>
           {data.map((item) => (
             <View key={item.key}>
               {renderMessage({ item })}
