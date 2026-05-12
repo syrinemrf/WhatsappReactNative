@@ -54,8 +54,7 @@ export default function Chat(props) {
   const secondid     = props.route.params.secondid;
   const secondPseudo = props.route.params.secondPseudo || 'Chat';
 
-  const messagesRef = useRef([]);
-  const [renderTick,      setRenderTick]      = useState(0);
+  const [data,            setData]            = useState([]);
   const [message,         setMessage]         = useState('');
   const [secondistyping,  setSecondistyping]  = useState(false);
   const [imageToSend,     setImageToSend]     = useState(null);
@@ -82,38 +81,47 @@ export default function Chat(props) {
     ? currentid + secondid
     : secondid + currentid;
 
-  // Stable refs — not recreated on re-render
-  const ref_chat_ref       = useRef(database.ref('AllMessages/' + iddiscussion + '/chat'));
-  const ref_istyping_ref   = useRef(database.ref('AllMessages/' + iddiscussion + '/' + secondid + 'istyping'));
-  const ref_discussion_ref = useRef(database.ref('AllMessages/' + iddiscussion));
+  // Stable refs for Firebase — avoids re-creating on re-render
+  const ref_chat_ref       = useRef(null);
+  const ref_istyping_ref   = useRef(null);
+  const ref_discussion_ref = useRef(null);
 
   useEffect(() => {
-    const ref_chat = ref_chat_ref.current;
-    const ref_second_istyping = ref_istyping_ref.current;
+    const chatPath   = 'AllMessages/' + iddiscussion + '/chat';
+    const typingPath = 'AllMessages/' + iddiscussion + '/' + secondid + 'istyping';
+    const discPath   = 'AllMessages/' + iddiscussion;
+
+    const refChat    = firebase.database().ref(chatPath);
+    const refTyping  = firebase.database().ref(typingPath);
+    const refDisc    = firebase.database().ref(discPath);
+
+    ref_chat_ref.current       = refChat;
+    ref_istyping_ref.current   = refTyping;
+    ref_discussion_ref.current = refDisc;
 
     const handleMessages = (snapshot) => {
       const d = [];
       snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
-      console.log('[handleMessages] count:', d.length, 'last:', d[d.length-1]?.message);
-      messagesRef.current = d;
-      setRenderTick((t) => t + 1);
+      console.log('[handleMessages] count:', d.length, 'last:', d[d.length - 1]?.message);
+      setData(d);
     };
-    ref_chat.on('value', handleMessages);
-    ref_second_istyping.on('value', (snap) => setSecondistyping(!!snap.val()));
+
+    refChat.on('value', handleMessages);
+    refTyping.on('value', (snap) => setSecondistyping(!!snap.val()));
 
     AsyncStorage.getItem('chat_theme_' + iddiscussion).then((val) => {
       if (val) { try { setTheme(JSON.parse(val)); } catch {} }
     });
 
-    database.ref('allaccounts').once('value').then((snap) => {
+    firebase.database().ref('allaccounts').once('value').then((snap) => {
       const d = [];
       snap.forEach((u) => { if (u.val() && u.val().Id !== currentid) d.push(u.val()); });
       setAllContacts(d);
     });
 
     return () => {
-      ref_chat.off('value', handleMessages);
-      ref_second_istyping.off();
+      refChat.off('value', handleMessages);
+      refTyping.off();
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
       }
@@ -121,13 +129,13 @@ export default function Chat(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scroll to bottom whenever messages change
+  // Scroll to bottom on new messages
   useEffect(() => {
-    if (messagesRef.current.length > 0) {
-      const t = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 80);
+    if (data.length > 0) {
+      const t = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
       return () => clearTimeout(t);
     }
-  }, [renderTick]);
+  }, [data.length]);
 
   // ─── THEME ────────────────────────────────────────────────────────────────
   const saveTheme = async (t) => {
@@ -428,7 +436,7 @@ export default function Chat(props) {
     );
   };
 
-  const mediaMessages = messagesRef.current.filter((m) => m.type === 'image');
+  const mediaMessages = data.filter((m) => m.type === 'image');
 
   // ─── BACKGROUND ───────────────────────────────────────────────────────────
   const bgSource = theme.type === 'image' && theme.value
@@ -500,17 +508,12 @@ export default function Chat(props) {
           ref={flatListRef}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         >
-          {/* DEBUG — retire ces lignes une fois que ça marche */}
-          <Text style={{ color: 'red', textAlign: 'center', fontSize: 11 }}>
-            tick={renderTick} msgs={messagesRef.current.length}
+          <Text style={{ color: 'red', textAlign: 'center', fontSize: 10 }}>
+            msgs={data.length}
           </Text>
-          {messagesRef.current.map((item) => (
-            <View key={item.key || String(Math.random())}>
-              <Text style={{ color: 'blue', fontSize: 12, margin: 4, backgroundColor: 'white' }}>
-                RAW: type={String(item.type)} | msg={String(item.message)} | sender={String(item.idsender)}
-              </Text>
+          {data.map((item) => (
+            <View key={item.key}>
               {renderMessage({ item })}
             </View>
           ))}
