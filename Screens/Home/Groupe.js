@@ -75,8 +75,12 @@ export default function Groupe(props) {
   const [showAddMembers,   setShowAddMembers]   = useState(false);
   const [selectedImage,    setSelectedImage]    = useState(null);
   const [showImgModal,     setShowImgModal]     = useState(false);
+  const [forumIsSending,   setForumIsSending]   = useState(false);
+  const [groupIsSending,   setGroupIsSending]   = useState(false);
   const groupChatRef    = useRef(null);
   const groupRecordRef  = useRef(null);
+  const forumInputRef   = useRef(null);
+  const groupInputRef   = useRef(null);
 
   // ─── Listeners ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -173,14 +177,17 @@ export default function Groupe(props) {
 
   // ─── FORUM actions ──────────────────────────────────────────────────────────
   const sendForumMsg = async () => {
+    if (forumIsSending) return;
     try {
       let msg = forumMsg.trim();
       let type = 'text';
-      if (forumImageToSend) { msg = await uploadImage(forumImageToSend); type = 'image'; }
+      if (forumImageToSend) { setForumIsSending(true); msg = await uploadImage(forumImageToSend); type = 'image'; }
       if (!msg) return;
+      setForumIsSending(true);
       await ref_forum.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
       setForumMsg(''); setForumImageToSend(null); setShowForumEmoji(false);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); }
+      setTimeout(() => forumInputRef.current?.focus(), 50);
+    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { setForumIsSending(false); }
   };
 
   const pickForumCamera = async () => {
@@ -248,16 +255,18 @@ export default function Groupe(props) {
 
   // ─── GROUP actions ──────────────────────────────────────────────────────────
   const sendGroupMsg = async () => {
-    if (!activeGroup) return;
+    if (!activeGroup || groupIsSending) return;
     try {
       let msg = groupMsg.trim();
       let type = 'text';
-      if (groupImageToSend) { msg = await uploadImage(groupImageToSend); type = 'image'; }
+      if (groupImageToSend) { setGroupIsSending(true); msg = await uploadImage(groupImageToSend); type = 'image'; }
       if (!msg) return;
+      setGroupIsSending(true);
       const ref_gchat = ref_all_groups.child(activeGroup.id).child('chat');
       await ref_gchat.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
       setGroupMsg(''); setGroupImageToSend(null); setShowGroupEmoji(false);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); }
+      setTimeout(() => groupInputRef.current?.focus(), 50);
+    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { setGroupIsSending(false); }
   };
 
   const pickGroupCamera = async () => {
@@ -432,8 +441,9 @@ export default function Groupe(props) {
   // ─── Input bar (shared) ──────────────────────────────────────────────────────
   const renderInputBar = ({
     msg, setMsg, imageToSend, setImageToSend,
-    showEmoji, setShowEmoji, isRecording,
+    showEmoji, setShowEmoji, isRecording, isSending,
     onCamera, onLocation, onStartRecord, onCancelRecord, onSendRecord, onSend,
+    inputRef,
   }) => (
     <>
       {imageToSend && (
@@ -474,7 +484,7 @@ export default function Groupe(props) {
           <TouchableOpacity onPress={() => setShowEmoji((v) => !v)} style={styles.inputIcon}>
             <Ionicons name={showEmoji ? 'happy' : 'happy-outline'} size={24} color="#00897B" />
           </TouchableOpacity>
-          <TextInput value={msg} onChangeText={setMsg} placeholder="Message..." placeholderTextColor="#aaa"
+          <TextInput ref={inputRef} value={msg} onChangeText={setMsg} placeholder="Message..." placeholderTextColor="#aaa"
             style={styles.input} multiline onFocus={() => setShowEmoji(false)} />
           <TouchableOpacity onPress={onCamera} style={styles.inputIcon}>
             <Ionicons name="camera-outline" size={23} color="#00897B" />
@@ -485,11 +495,12 @@ export default function Groupe(props) {
           <TouchableOpacity onPress={onStartRecord} style={styles.inputIcon}>
             <Ionicons name="mic-outline" size={23} color="#00897B" />
           </TouchableOpacity>
-          {(msg.trim() || imageToSend) && (
-            <TouchableOpacity onPress={onSend} style={styles.sendBtn}>
-              <Ionicons name="send" size={18} color="#fff" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={onSend}
+            disabled={isSending || (!msg.trim() && !imageToSend)}
+            style={[styles.sendBtn, { opacity: (msg.trim() || imageToSend) ? (isSending ? 0.5 : 1) : 0 }]}>
+            <Ionicons name={isSending ? 'time-outline' : 'send'} size={18} color="#fff" />
+          </TouchableOpacity>
         </View>
       )}
     </>
@@ -512,13 +523,14 @@ export default function Groupe(props) {
         msg: forumMsg, setMsg: setForumMsg,
         imageToSend: forumImageToSend, setImageToSend: setForumImageToSend,
         showEmoji: showForumEmoji, setShowEmoji: setShowForumEmoji,
-        isRecording: forumIsRecording,
+        isRecording: forumIsRecording, isSending: forumIsSending,
         onCamera: pickForumCamera,
         onLocation: prepareForumLocation,
         onStartRecord: startForumRecording,
         onCancelRecord: cancelForumRecording,
         onSendRecord: stopSendForumRecording,
         onSend: sendForumMsg,
+        inputRef: forumInputRef,
       })}
     </KeyboardAvoidingView>
   );
@@ -560,13 +572,14 @@ export default function Groupe(props) {
           msg: groupMsg, setMsg: setGroupMsg,
           imageToSend: groupImageToSend, setImageToSend: setGroupImageToSend,
           showEmoji: showGroupEmoji, setShowEmoji: setShowGroupEmoji,
-          isRecording: groupIsRecording,
+          isRecording: groupIsRecording, isSending: groupIsSending,
           onCamera: pickGroupCamera,
           onLocation: prepareGroupLocation,
           onStartRecord: startGroupRecording,
           onCancelRecord: cancelGroupRecording,
           onSendRecord: stopSendGroupRecording,
           onSend: sendGroupMsg,
+          inputRef: groupInputRef,
         })}
       </KeyboardAvoidingView>
     </View>

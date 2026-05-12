@@ -56,7 +56,13 @@ export default function MyAccount(props) {
     // Load photo history
     var_my_account.child('photoHistory').on('value', (snapshot) => {
       const hist = [];
-      snapshot.forEach((item) => hist.push(item.val()));
+      snapshot.forEach((item) => {
+        const val = item.val();
+        // Support both old format (plain string) and new format ({url, savedAt})
+        const url = typeof val === 'string' ? val : val?.url;
+        const savedAt = typeof val === 'string' ? null : val?.savedAt;
+        if (url) hist.push({ url, savedAt });
+      });
       setPhotoHistory(hist.reverse());
     });
 
@@ -108,36 +114,36 @@ export default function MyAccount(props) {
   };
 
   const handleSave = async () => {
-    let finalUrl = UrlImage;
-    // Only upload if it's a new local file (not already a remote https URL)
-    if (UrlImage && !UrlImage.startsWith('http')) {
-      finalUrl = await uploadImageToSupabase(UrlImage);
-      // Add to photo history only when a new image is uploaded
-      var_my_account.child('photoHistory').push(finalUrl);
-    }
+    try {
+      let finalUrl = UrlImage;
+      // Only upload if it's a new local file (not already a remote https URL)
+      if (UrlImage && !UrlImage.startsWith('http')) {
+        finalUrl = await uploadImageToSupabase(UrlImage);
+        // Add new photo URL to history
+        await var_my_account.child('photoHistory').push({
+          url: finalUrl,
+          savedAt: new Date().toISOString(),
+        });
+      }
 
-    const ref_one_account = ref_all_accounts.child(userid);
-    ref_one_account
-      .set({
+      // Use update() NOT set() — set() would wipe photoHistory and other sub-nodes
+      await var_my_account.update({
         Id: userid,
         Nom,
         Pseudo,
         Email,
         Numero,
         UrlImage: finalUrl || null,
-      })
-      .then(() => {
-        // After first account creation, navigate to Home (ListAccount is nested in Home tab)
-        // From the tab, navigate works directly to sibling tabs
-        try {
-          props.navigation.navigate('ListAccount');
-        } catch {
-          props.navigation.replace('Home', { userid });
-        }
-      })
-      .catch((error) => {
-        Alert.alert('Erreur', error.message);
       });
+
+      try {
+        props.navigation.navigate('ListAccount');
+      } catch {
+        props.navigation.replace('Home', { userid });
+      }
+    } catch (error) {
+      Alert.alert('Erreur', error.message);
+    }
   };
 
   const handleSignOut = async () => {
@@ -180,7 +186,6 @@ export default function MyAccount(props) {
           </View>
         </TouchableOpacity>
 
-        {/* Photo history */}
         <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn}>
           <Text style={styles.historyBtnText}>🕓 Historique photos ({photoHistory.length})</Text>
         </TouchableOpacity>
@@ -251,19 +256,25 @@ export default function MyAccount(props) {
               <Text style={{ color: '#90A4AE', marginTop: 12 }}>Aucune photo sauvegardée</Text>
             ) : (
               <ScrollView contentContainerStyle={styles.historyGrid}>
-                {photoHistory.map((url, i) => (
+                {photoHistory.map((item, i) => (
                   <TouchableOpacity
                     key={i}
                     onPress={() => {
-                      setUrlImage(url);
+                      setUrlImage(item.url);
                       setShowHistory(false);
                     }}
+                    style={{ alignItems: 'center', margin: 4 }}
                   >
-                    <Image source={{ uri: url }} style={styles.historyThumb} />
+                    <Image source={{ uri: item.url }} style={styles.historyThumb} />
                     {i === 0 && (
                       <View style={styles.currentBadge}>
-                        <Text style={{ color: '#fff', fontSize: 10 }}>Actuelle</Text>
+                        <Text style={{ color: '#fff', fontSize: 10 }}>Récente</Text>
                       </View>
+                    )}
+                    {item.savedAt && (
+                      <Text style={{ fontSize: 9, color: '#90A4AE', marginTop: 2, textAlign: 'center', maxWidth: 70 }}>
+                        {new Date(item.savedAt).toLocaleDateString('fr-FR')}
+                      </Text>
                     )}
                   </TouchableOpacity>
                 ))}

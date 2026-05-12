@@ -68,9 +68,14 @@ export default function Chat(props) {
   const [showThemeModal,  setShowThemeModal]  = useState(false);
   const [showLocModal,    setShowLocModal]    = useState(false);
   const [pendingLoc,      setPendingLoc]      = useState(null);
+  const [allContacts,     setAllContacts]     = useState([]);
+  const [showForwardModal,setShowForwardModal]= useState(false);
+  const [forwardImageUrl, setForwardImageUrl] = useState(null);
+  const [isSending,       setIsSending]       = useState(false);
 
   const recordingRef = useRef(null);
   const flatListRef  = useRef(null);
+  const inputRef     = useRef(null);
 
   const iddiscussion = currentid > secondid
     ? currentid + secondid
@@ -93,9 +98,18 @@ export default function Chat(props) {
       if (val) { try { setTheme(JSON.parse(val)); } catch {} }
     });
 
+    // Load contacts for forward feature
+    database.ref('allaccounts').on('value', (snap) => {
+      const d = [];
+      snap.forEach((u) => { if (u.val() && u.val().Id !== currentid) d.push(u.val()); });
+      setAllContacts(d);
+    });
+
     return () => {
+      database.ref('allaccounts').off();
       ref_chat.off('value', handleMessages);
       ref_second_istyping.off();
+      database.ref('allaccounts').off();
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
       }
@@ -253,16 +267,37 @@ export default function Chat(props) {
     setSelectedMsg(null);
   };
 
+  // ─── FORWARD ──────────────────────────────────────────────────────────────
+  const forwardImageToContact = async (contact) => {
+    if (!forwardImageUrl) return;
+    setShowForwardModal(false);
+    try {
+      const theirId = contact.Id;
+      const fwdId = currentid > theirId ? currentid + theirId : theirId + currentid;
+      const ref_fwd = ref_all_messages.child(fwdId).child('chat');
+      await ref_fwd.push().set({
+        idsender: currentid, idreceiver: theirId,
+        message: forwardImageUrl,
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        type: 'image',
+      });
+      Alert.alert('Transféré', `Image envoyée à ${contact.Pseudo || contact.Nom}.`);
+    } catch (e) { Alert.alert('Erreur transfert', e.message); }
+  };
+
   // ─── SEND ─────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
+    if (isSending) return;
     try {
       let finalMessage = message.trim();
       let type = 'text';
       if (imageToSend) {
+        setIsSending(true);
         finalMessage = await uploadImageToSupabase(imageToSend);
         type = 'image';
       }
       if (!finalMessage) return;
+      setIsSending(true);
       await ref_chat.push().set({
         idsender: currentid, idreceiver: secondid,
         message: finalMessage,
@@ -273,8 +308,12 @@ export default function Chat(props) {
       setImageToSend(null);
       setMessage('');
       setShowEmoji(false);
+      // Restore focus so user can immediately type next message
+      setTimeout(() => inputRef.current?.focus(), 50);
     } catch (e) {
       Alert.alert("Erreur d'envoi", e.message);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -411,9 +450,17 @@ export default function Chat(props) {
             {mediaMessages.length === 0
               ? <Text style={{ color: '#90A4AE', fontSize: 13 }}>Aucun media</Text>
               : mediaMessages.map((m, i) => (
-                <TouchableOpacity key={i} onPress={() => { setSelectedImage(m.message); setShowImageModal(true); }}>
-                  <Image source={{ uri: m.message }} style={styles.mediaThumbnail} />
-                </TouchableOpacity>
+                <View key={i} style={{ alignItems: 'center', marginRight: 8 }}>
+                  <TouchableOpacity onPress={() => { setSelectedImage(m.message); setShowImageModal(true); }}>
+                    <Image source={{ uri: m.message }} style={styles.mediaThumbnail} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => { setForwardImageUrl(m.message); setShowForwardModal(true); }}
+                    style={styles.forwardBtn}>
+                    <Ionicons name="share-outline" size={14} color="#00897B" />
+                    <Text style={styles.forwardBtnText}> Transférer</Text>
+                  </TouchableOpacity>
+                </View>
               ))}
           </ScrollView>
         </View>
@@ -482,6 +529,7 @@ export default function Chat(props) {
               <Ionicons name={showEmoji ? 'happy' : 'happy-outline'} size={26} color="#00897B" />
             </TouchableOpacity>
             <TextInput
+              ref={inputRef}
               value={message}
               onChangeText={setMessage}
               onFocus={() => {
@@ -503,11 +551,12 @@ export default function Chat(props) {
             <TouchableOpacity onPress={startRecording} style={styles.inputIcon}>
               <Ionicons name="mic-outline" size={25} color="#00897B" />
             </TouchableOpacity>
-            {(message.trim() || imageToSend) && (
-              <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={sendMessage}
+              disabled={isSending || (!message.trim() && !imageToSend)}
+              style={[styles.sendBtn, { opacity: (message.trim() || imageToSend) ? (isSending ? 0.5 : 1) : 0 }]}>
+              <Ionicons name={isSending ? 'time-outline' : 'send'} size={20} color="#fff" />
+            </TouchableOpacity>
           </View>
         )}
       </KeyboardAvoidingView>
@@ -566,6 +615,41 @@ export default function Chat(props) {
             </View>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Forward modal */}
+      <Modal visible={showForwardModal} transparent animationType="slide">
+        <View style={styles.reactModalBg}>
+          <View style={[styles.reactPanel, { paddingBottom: 30 }]}>
+            <View style={styles.reactHandle} />
+            <Text style={styles.reactTitle}>Transférer à...</Text>
+            <ScrollView style={{ maxHeight: 320, width: '100%' }}>
+              {allContacts.length === 0
+                ? <Text style={{ textAlign: 'center', color: '#90A4AE', marginTop: 16 }}>Aucun contact</Text>
+                : allContacts.map((c) => (
+                  <TouchableOpacity
+                    key={c.Id}
+                    onPress={() => forwardImageToContact(c)}
+                    style={styles.forwardContactRow}>
+                    {c.UrlImage
+                      ? <Image source={{ uri: c.UrlImage }} style={styles.forwardContactAvatar} />
+                      : <View style={[styles.forwardContactAvatar, { backgroundColor: '#00897B', alignItems: 'center', justifyContent: 'center' }]}>
+                          <Ionicons name="person" size={18} color="#fff" />
+                        </View>
+                    }
+                    <Text style={styles.forwardContactName}>{c.Pseudo || c.Nom || 'Utilisateur'}</Text>
+                    <Ionicons name="share-outline" size={20} color="#00897B" />
+                  </TouchableOpacity>
+                ))
+              }
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => setShowForwardModal(false)}
+              style={[styles.locationBtn, { backgroundColor: '#ECEFF1', marginTop: 12 }]}>
+              <Text style={[styles.locationBtnText, { color: '#555' }]}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Theme picker */}
@@ -637,7 +721,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#E0E0E0',
   },
   mediaPanelTitle: { color: '#004D40', fontWeight: '700', fontSize: 13 },
-  mediaThumbnail:  { width: 68, height: 68, borderRadius: 8, marginRight: 8, borderWidth: 2, borderColor: '#25D366' },
+  mediaThumbnail:  { width: 68, height: 68, borderRadius: 8, marginRight: 0, borderWidth: 2, borderColor: '#25D366' },
+  forwardBtn:      { flexDirection: 'row', alignItems: 'center', marginTop: 4, paddingVertical: 2, paddingHorizontal: 4 },
+  forwardBtnText:  { color: '#00897B', fontSize: 11, fontWeight: '600' },
+  forwardContactRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: 12, marginBottom: 6, backgroundColor: '#F5F5F5',
+  },
+  forwardContactAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: 12 },
+  forwardContactName: { flex: 1, fontSize: 15, color: '#004D40', fontWeight: '500' },
 
   msgWrapper:        { width: '100%', paddingHorizontal: 8, marginVertical: 2, flexDirection: 'row' },
   senderWrapper:     { justifyContent: 'flex-end' },
