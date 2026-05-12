@@ -36,8 +36,12 @@ export default function MyAccount(props) {
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    // Email always comes from Firebase Auth (works for new accounts too)
-    setEmail(auth.currentUser?.email || '');
+    // onAuthStateChanged guarantees we get the user even if auth initialized async
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      if (user) setEmail(user.email || '');
+    });
+    // Also try immediately in case already signed in
+    if (auth.currentUser) setEmail(auth.currentUser.email || '');
 
     var_my_account.on('value', (snapshot) => {
       var data = snapshot.val();
@@ -57,6 +61,7 @@ export default function MyAccount(props) {
     });
 
     return () => {
+      unsubscribeAuth();
       var_my_account.off();
       var_my_account.child('photoHistory').off();
     };
@@ -74,33 +79,32 @@ export default function MyAccount(props) {
 
   const pickFromGallery = async () => {
     setShowPhotoSource(false);
-    // Wait for modal to fully close before launching picker
-    setTimeout(async () => {
+    await new Promise((r) => setTimeout(r, 600));
+    try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permission requise', 'Accès galerie nécessaire.'); return; }
+      if (!perm.granted) { Alert.alert('Permission requise', 'Acces galerie necessaire.'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
       if (!result.canceled) setUrlImage(result.assets[0].uri);
-    }, 400);
+    } catch (e) { Alert.alert('Erreur galerie', e.message); }
   };
 
   const pickFromCamera = async () => {
     setShowPhotoSource(false);
-    // Wait for modal to fully close before launching camera
-    setTimeout(async () => {
+    await new Promise((r) => setTimeout(r, 600));
+    try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permission requise', 'Accès caméra nécessaire.'); return; }
+      if (!perm.granted) { Alert.alert('Permission requise', 'Acces camera necessaire.'); return; }
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
       if (!result.canceled) setUrlImage(result.assets[0].uri);
-    }, 400);
+    } catch (e) { Alert.alert('Erreur camera', e.message); }
   };
 
   const handleSave = async () => {
