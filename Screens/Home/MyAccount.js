@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -164,12 +165,14 @@ export default function MyAccount(props) {
 
         {/* Avatar */}
         <TouchableOpacity onPress={() => setShowPhotoSource(true)} style={styles.avatarWrapper}>
-          <Image
-            source={UrlImage ? { uri: UrlImage } : require('../../assets/profil.png')}
-            style={styles.avatar}
-          />
+          {UrlImage
+            ? <Image source={{ uri: UrlImage }} style={styles.avatar} />
+            : <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={54} color="#fff" />
+              </View>
+          }
           <View style={styles.editBadge}>
-            <Text style={styles.editBadgeText}>📷</Text>
+            <Ionicons name="camera" size={16} color="#fff" />
           </View>
         </TouchableOpacity>
 
@@ -303,6 +306,11 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     borderWidth: 3,
     borderColor: '#C9A84C',
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#00897B',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editBadge: {
     position: 'absolute',

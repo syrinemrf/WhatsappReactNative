@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import {
   FlatList,
@@ -48,7 +49,7 @@ export default function ListAccount(props) {
 
       {/* Search bar */}
       <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>🔍</Text>
+        <Ionicons name="search-outline" size={18} color="#90A4AE" style={{ marginLeft: 10, marginRight: 6 }} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -57,8 +58,8 @@ export default function ListAccount(props) {
           style={styles.searchInput}
         />
         {search ? (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Text style={{ color: '#90A4AE', fontSize: 18, marginRight: 8 }}>✕</Text>
+          <TouchableOpacity onPress={() => setSearch('')} style={{ marginRight: 8 }}>
+            <Ionicons name="close-circle" size={18} color="#90A4AE" />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -70,10 +71,12 @@ export default function ListAccount(props) {
           <View style={styles.itemRow}>
             <TouchableOpacity onPress={() => { setIsModalVisible(true); setselectedUser(item); }}>
               <View style={styles.avatarContainer}>
-                <Image
-                  style={styles.avatar}
-                  source={item.UrlImage ? { uri: item.UrlImage } : require('../../assets/profil.png')}
-                />
+                {item.UrlImage
+                  ? <Image style={styles.avatar} source={{ uri: item.UrlImage }} />
+                  : <View style={styles.avatarPlaceholder}>
+                      <Ionicons name="person" size={26} color="#fff" />
+                    </View>
+                }
                 <View style={styles.onlineDot} />
               </View>
             </TouchableOpacity>
@@ -92,7 +95,7 @@ export default function ListAccount(props) {
                   : alert('Numéro non disponible')
               }
             >
-              <Text style={{ fontSize: 19 }}>📞</Text>
+              <Ionicons name="call" size={20} color="#00897B" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -105,7 +108,7 @@ export default function ListAccount(props) {
                 })
               }
             >
-              <Image style={styles.msgIcon} source={require('../../assets/message.png')} />
+              <Ionicons name="chatbubble-ellipses" size={20} color="#075E54" />
             </TouchableOpacity>
           </View>
         )}
@@ -126,14 +129,12 @@ export default function ListAccount(props) {
               <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
 
-            <Image
-              style={styles.modalAvatar}
-              source={
-                selectedUser?.UrlImage
-                  ? { uri: selectedUser.UrlImage }
-                  : require('../../assets/profil.png')
-              }
-            />
+            {selectedUser?.UrlImage
+              ? <Image style={styles.modalAvatar} source={{ uri: selectedUser.UrlImage }} />
+              : <View style={[styles.modalAvatar, styles.modalAvatarPlaceholder]}>
+                  <Ionicons name="person" size={50} color="#fff" />
+                </View>
+            }
 
             <Text style={styles.modalName}>{selectedUser?.Nom || 'Sans nom'}</Text>
             <Text style={styles.modalPseudo}>@{selectedUser?.Pseudo}</Text>
@@ -152,19 +153,22 @@ export default function ListAccount(props) {
                 style={[styles.modalBtn, { backgroundColor: '#00897B' }]}
                 onPress={() => selectedUser?.Numero && Linking.openURL(`tel:${selectedUser.Numero}`)}
               >
-                <Text style={styles.modalBtnText}>📞 Appel</Text>
+                <Ionicons name="call" size={18} color="#fff" />
+                <Text style={styles.modalBtnText}> Appel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalBtn, { backgroundColor: '#1976D2' }]}
                 onPress={() => selectedUser?.Numero && Linking.openURL(`sms:${selectedUser.Numero}`)}
               >
-                <Text style={styles.modalBtnText}>💬 SMS</Text>
+                <Ionicons name="chatbubble" size={18} color="#fff" />
+                <Text style={styles.modalBtnText}> SMS</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalBtn, { backgroundColor: '#C9A84C' }]}
                 onPress={() => selectedUser?.Email && Linking.openURL(`mailto:${selectedUser.Email}`)}
               >
-                <Text style={styles.modalBtnText}>✉️ Email</Text>
+                <Ionicons name="mail" size={18} color="#fff" />
+                <Text style={styles.modalBtnText}> Email</Text>
               </TouchableOpacity>
             </View>
 
@@ -179,7 +183,8 @@ export default function ListAccount(props) {
                 });
               }}
             >
-              <Text style={styles.chatFromModalText}>💬 Ouvrir la conversation</Text>
+              <Ionicons name="chatbubbles" size={18} color="#fff" />
+              <Text style={styles.chatFromModalText}> Ouvrir la conversation</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -256,6 +261,11 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     borderWidth: 2,
     borderColor: '#C9A84C',
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#00897B',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   onlineDot: {
     position: 'absolute',
@@ -334,6 +344,11 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     marginTop: 8,
   },
+  modalAvatarPlaceholder: {
+    backgroundColor: '#00897B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalName: {
     fontSize: 22,
     fontWeight: 'bold',
@@ -373,6 +388,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingVertical: 10,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
     elevation: 2,
   },
   modalBtnText: {
@@ -388,6 +405,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     width: '100%',
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#C9A84C',
   },
