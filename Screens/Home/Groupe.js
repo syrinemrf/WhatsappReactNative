@@ -79,8 +79,6 @@ export default function Groupe(props) {
   const groupRecordRef  = useRef(null);
   const forumInputRef   = useRef(null);
   const groupInputRef   = useRef(null);
-  const forumSendRef    = useRef(false);
-  const groupSendRef    = useRef(false);
 
   // ─── Listeners ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -176,16 +174,18 @@ export default function Groupe(props) {
 
   // ─── FORUM actions ──────────────────────────────────────────────────────────
   const sendForumMsg = async () => {
-    if (forumSendRef.current) return;
-    forumSendRef.current = true;
+    const textContent = forumMsg.trim();
+    const imgContent  = forumImageToSend;
+    if (!textContent && !imgContent) return;
+    setForumMsg(''); setForumImageToSend(null); setShowForumEmoji(false);
     try {
-      let msg = forumMsg.trim();
-      let type = 'text';
-      if (forumImageToSend) { msg = await uploadImage(forumImageToSend); type = 'image'; }
-      if (!msg) return;
+      let msg = textContent; let type = 'text';
+      if (imgContent) { msg = await uploadImage(imgContent); type = 'image'; }
       await ref_forum.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
-      setForumMsg(''); setForumImageToSend(null); setShowForumEmoji(false);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { forumSendRef.current = false; }
+    } catch (e) {
+      Alert.alert("Erreur d'envoi", e.message);
+      if (!imgContent) setForumMsg(textContent);
+    }
   };
 
   const pickForumCamera = async () => {
@@ -253,17 +253,20 @@ export default function Groupe(props) {
 
   // ─── GROUP actions ──────────────────────────────────────────────────────────
   const sendGroupMsg = async () => {
-    if (!activeGroup || groupSendRef.current) return;
-    groupSendRef.current = true;
+    if (!activeGroup) return;
+    const textContent = groupMsg.trim();
+    const imgContent  = groupImageToSend;
+    if (!textContent && !imgContent) return;
+    setGroupMsg(''); setGroupImageToSend(null); setShowGroupEmoji(false);
     try {
-      let msg = groupMsg.trim();
-      let type = 'text';
-      if (groupImageToSend) { msg = await uploadImage(groupImageToSend); type = 'image'; }
-      if (!msg) return;
+      let msg = textContent; let type = 'text';
+      if (imgContent) { msg = await uploadImage(imgContent); type = 'image'; }
       const ref_gchat = ref_all_groups.child(activeGroup.id).child('chat');
       await ref_gchat.push().set({ idsender: userid, pseudo: myPseudo, urlImage: myUrlImage, message: msg, time: timeNow(), type });
-      setGroupMsg(''); setGroupImageToSend(null); setShowGroupEmoji(false);
-    } catch (e) { Alert.alert("Erreur d'envoi", e.message); } finally { groupSendRef.current = false; }
+    } catch (e) {
+      Alert.alert("Erreur d'envoi", e.message);
+      if (!imgContent) setGroupMsg(textContent);
+    }
   };
 
   const pickGroupCamera = async () => {
@@ -329,6 +332,22 @@ export default function Groupe(props) {
     if (!msgKey || !activeGroup) return;
     ref_all_groups.child(activeGroup.id).child('chat').child(msgKey).child('reactions').child(emoji).transaction((c) => (c || 0) + 1);
     setShowGroupReact(false); setGroupSelectedMsg(null);
+  };
+
+  // ─── Delete messages ─────────────────────────────────────────────────────
+  const deleteForumMsg = (key) => {
+    Alert.alert('Supprimer', 'Supprimer ce message pour tous ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => ref_forum.child(key).remove() },
+    ]);
+  };
+
+  const deleteGroupMsg = (key) => {
+    if (!activeGroup) return;
+    Alert.alert('Supprimer', 'Supprimer ce message pour tous ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => ref_all_groups.child(activeGroup.id).child('chat').child(key).remove() },
+    ]);
   };
 
   // ─── Group management ────────────────────────────────────────────────────────
@@ -497,6 +516,7 @@ export default function Groupe(props) {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onSend}
+            disabled={!msg.trim() && !imageToSend}
             style={[styles.sendBtn, { opacity: (msg.trim() || imageToSend) ? 1 : 0 }]}>
             <Ionicons name="send" size={18} color="#fff" />
           </TouchableOpacity>
@@ -507,13 +527,21 @@ export default function Groupe(props) {
 
   // ─── FORUM VIEW ──────────────────────────────────────────────────────────────
   const renderForum = () => (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
       <FlatList
         ref={forumRef}
         data={forumData}
         keyExtractor={(item) => item.key || String(Math.random())}
         renderItem={({ item }) =>
-          renderMsg(item, item.idsender === userid, () => { setForumSelectedMsg(item); setShowForumReact(true); })
+          renderMsg(item, item.idsender === userid, () => {
+            if (item.idsender === userid) {
+              Alert.alert('Message', undefined, [
+                { text: '😊 Réagir', onPress: () => { setForumSelectedMsg(item); setShowForumReact(true); } },
+                { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteForumMsg(item.key) },
+                { text: 'Annuler', style: 'cancel' },
+              ]);
+            } else { setForumSelectedMsg(item); setShowForumReact(true); }
+          })
         }
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}
@@ -556,13 +584,21 @@ export default function Groupe(props) {
         )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
         <FlatList
           ref={groupChatRef}
           data={groupMessages}
           keyExtractor={(item) => item.key || String(Math.random())}
           renderItem={({ item }) =>
-            renderMsg(item, item.idsender === userid, () => { setGroupSelectedMsg(item); setShowGroupReact(true); })
+            renderMsg(item, item.idsender === userid, () => {
+              if (item.idsender === userid) {
+                Alert.alert('Message', undefined, [
+                  { text: '😊 Réagir', onPress: () => { setGroupSelectedMsg(item); setShowGroupReact(true); } },
+                  { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteGroupMsg(item.key) },
+                  { text: 'Annuler', style: 'cancel' },
+                ]);
+              } else { setGroupSelectedMsg(item); setShowGroupReact(true); }
+            })
           }
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}

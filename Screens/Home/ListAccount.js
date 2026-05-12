@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { useState, useEffect, useRef } from 'react';
 import {
   FlatList,
@@ -31,6 +32,28 @@ export default function ListAccount(props) {
   const [incomingCall,  setIncomingCall]    = useState(null);
   const callTimerRef  = useRef(null);
   const callKeyRef    = useRef(null);
+  const ringtoneRef   = useRef(null);
+
+  const playRingtone = async () => {
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
+      // Use a reliable public ringtone URL
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://www.soundjay.com/phone/sounds/phone-calling-1.mp3' },
+        { isLooping: true, shouldPlay: true, volume: 1.0 }
+      );
+      ringtoneRef.current = sound;
+    } catch {
+      // Ringtone failed silently — call UI still works
+    }
+  };
+
+  const stopRingtone = async () => {
+    if (ringtoneRef.current) {
+      try { await ringtoneRef.current.stopAsync(); await ringtoneRef.current.unloadAsync(); } catch {}
+      ringtoneRef.current = null;
+    }
+  };
 
   useEffect(() => {
     ref_all_accounts.on('value', (snapshot) => {
@@ -55,11 +78,21 @@ export default function ListAccount(props) {
     };
   }, []);
 
-  const startCall = (contact) => {
+  // Play ringtone when receiving an incoming call
+  useEffect(() => {
+    if (incomingCall) {
+      playRingtone();
+    } else {
+      stopRingtone();
+    }
+  }, [!!incomingCall]);
+
+  const startCall = async (contact) => {
     setCallContact(contact);
     setCallConnected(false);
     setCallDuration(0);
     setShowCallModal(true);
+    playRingtone();
     // Signal via Firebase
     const callKey = database.ref('calls').push().key;
     callKeyRef.current = callKey;
@@ -67,20 +100,23 @@ export default function ListAccount(props) {
       from: userid, to: contact.Id, status: 'ringing', startedAt: Date.now(),
     });
     // Auto-connect after 4 seconds
-    setTimeout(() => {
+    setTimeout(async () => {
+      await stopRingtone();
       setCallConnected(true);
       callTimerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
     }, 4000);
   };
 
-  const endCall = () => {
+  const endCall = async () => {
+    await stopRingtone();
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
     if (callKeyRef.current) { database.ref('calls').child(callKeyRef.current).remove(); callKeyRef.current = null; }
     setShowCallModal(false); setCallContact(null); setCallConnected(false); setCallDuration(0);
   };
 
-  const answerIncomingCall = () => {
+  const answerIncomingCall = async () => {
     if (!incomingCall) return;
+    await stopRingtone();
     database.ref('calls').child(incomingCall.id).update({ status: 'answered' });
     setCallContact(data.find((u) => u.Id === incomingCall.from) || { Pseudo: 'Utilisateur' });
     setCallConnected(true);
@@ -91,8 +127,9 @@ export default function ListAccount(props) {
     callTimerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
   };
 
-  const declineIncomingCall = () => {
+  const declineIncomingCall = async () => {
     if (!incomingCall) return;
+    await stopRingtone();
     database.ref('calls').child(incomingCall.id).remove();
     setIncomingCall(null);
   };

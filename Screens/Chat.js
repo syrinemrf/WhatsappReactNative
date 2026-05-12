@@ -73,9 +73,8 @@ export default function Chat(props) {
   const [forwardImageUrl, setForwardImageUrl] = useState(null);
 
   const recordingRef  = useRef(null);
-  const flatListRef   = useRef(null);
-  const inputRef      = useRef(null);
-  const isSendingRef  = useRef(false);
+  const flatListRef  = useRef(null);
+  const inputRef     = useRef(null);
 
   const iddiscussion = currentid > secondid
     ? currentid + secondid
@@ -285,30 +284,51 @@ export default function Chat(props) {
 
   // ─── SEND ─────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (isSendingRef.current) return;
-    isSendingRef.current = true;
+    const textContent = message.trim();
+    const imgContent  = imageToSend;
+    if (!textContent && !imgContent) return;
+    // Clear UI immediately (optimistic) so user can type next message right away
+    setMessage('');
+    setImageToSend(null);
+    setShowEmoji(false);
     try {
-      let finalMessage = message.trim();
+      let msg  = textContent;
       let type = 'text';
-      if (imageToSend) {
-        finalMessage = await uploadImageToSupabase(imageToSend);
+      if (imgContent) {
+        msg  = await uploadImageToSupabase(imgContent);
         type = 'image';
       }
-      if (!finalMessage) return;
-      await ref_chat.push().set({
+      const newRef = ref_chat.push();
+      await newRef.set({
         idsender: currentid, idreceiver: secondid,
-        message: finalMessage,
+        message: msg,
         time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
         type,
       });
       ref_discussion.child(currentid + 'istyping').set(false);
-      setImageToSend(null);
-      setMessage('');
-      setShowEmoji(false);
     } catch (e) {
       Alert.alert("Erreur d'envoi", e.message);
-    } finally {
-      isSendingRef.current = false;
+      // Restore text so user doesn't lose what they typed
+      if (!imgContent) setMessage(textContent);
+    }
+  };
+
+  // ─── DELETE MESSAGE ──────────────────────────────────────────────────
+  const handleLongPress = (item) => {
+    if (item.idsender === currentid) {
+      Alert.alert('Message', undefined, [
+        { text: '😊 Réagir', onPress: () => { setSelectedMsg(item); setShowReactions(true); } },
+        {
+          text: '🗑️ Supprimer pour tous', style: 'destructive',
+          onPress: () => Alert.alert('Supprimer', 'Supprimer ce message pour tout le monde ?', [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Supprimer', style: 'destructive', onPress: () => ref_chat.child(item.key).remove() },
+          ]),
+        },
+        { text: 'Annuler', style: 'cancel' },
+      ]);
+    } else {
+      setSelectedMsg(item); setShowReactions(true);
     }
   };
 
@@ -321,7 +341,7 @@ export default function Chat(props) {
 
     return (
       <TouchableOpacity activeOpacity={0.95}
-        onLongPress={() => { setSelectedMsg(item); setShowReactions(true); }}>
+        onLongPress={() => handleLongPress(item)}>
         <View style={[styles.msgWrapper, isSender ? styles.senderWrapper : styles.receiverWrapper]}>
           <View style={[
             styles.bubble,
@@ -464,8 +484,8 @@ export default function Chat(props) {
       {/* Keyboard-aware wrapper */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+        behavior="padding"
+        keyboardVerticalOffset={0}
       >
         {/* Messages list */}
         <FlatList
@@ -548,6 +568,7 @@ export default function Chat(props) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={sendMessage}
+              disabled={!message.trim() && !imageToSend}
               style={[styles.sendBtn, { opacity: (message.trim() || imageToSend) ? 1 : 0 }]}>
               <Ionicons name="send" size={20} color="#fff" />
             </TouchableOpacity>
