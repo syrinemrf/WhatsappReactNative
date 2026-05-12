@@ -124,9 +124,19 @@ export default function Groupe(props) {
     return () => ref_gchat.off();
   }, [activeGroup?.id]);
 
-  // Auto-scroll helpers
-  const scrollForumToBottom = () => { if (forumRef.current && forumData.length > 0) forumRef.current.scrollToEnd({ animated: false }); };
-  const scrollGroupToBottom = () => { if (groupChatRef.current && groupMessages.length > 0) groupChatRef.current.scrollToEnd({ animated: false }); };
+  // Auto-scroll on new messages
+  useEffect(() => {
+    if (forumData.length > 0) {
+      const t = setTimeout(() => forumRef.current?.scrollToEnd({ animated: false }), 80);
+      return () => clearTimeout(t);
+    }
+  }, [forumData.length]);
+  useEffect(() => {
+    if (groupMessages.length > 0) {
+      const t = setTimeout(() => groupChatRef.current?.scrollToEnd({ animated: false }), 80);
+      return () => clearTimeout(t);
+    }
+  }, [groupMessages.length]);
 
   // Keep activeGroup in sync when groups update
   useEffect(() => {
@@ -531,27 +541,25 @@ export default function Groupe(props) {
   // ─── FORUM VIEW ──────────────────────────────────────────────────────────────
   const renderForum = () => (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={60}>
-      <FlatList
+      <ScrollView
         ref={forumRef}
-        data={forumData}
-        extraData={forumData}
-        keyExtractor={(item) => item.key}
-        renderItem={({ item }) =>
-          renderMsg(item, item.idsender === userid, () => {
-            if (item.idsender === userid) {
-              Alert.alert('Message', undefined, [
-                { text: '😊 Réagir', onPress: () => { setForumSelectedMsg(item); setShowForumReact(true); } },
-                { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteForumMsg(item.key) },
-                { text: 'Annuler', style: 'cancel' },
-              ]);
-            } else { setForumSelectedMsg(item); setShowForumReact(true); }
-          })
-        }
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}
-        onContentSizeChange={scrollForumToBottom}
-        onLayout={scrollForumToBottom}
-      />
+      >
+        {forumData.map((item) => (
+          <View key={item.key}>
+            {renderMsg(item, item.idsender === userid, () => {
+              if (item.idsender === userid) {
+                Alert.alert('Message', undefined, [
+                  { text: '😊 Réagir', onPress: () => { setForumSelectedMsg(item); setShowForumReact(true); } },
+                  { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteForumMsg(item.key) },
+                  { text: 'Annuler', style: 'cancel' },
+                ]);
+              } else { setForumSelectedMsg(item); setShowForumReact(true); }
+            })}
+          </View>
+        ))}
+      </ScrollView>
       {renderInputBar({
         msg: forumMsg, setMsg: setForumMsg,
         imageToSend: forumImageToSend, setImageToSend: setForumImageToSend,
@@ -591,27 +599,25 @@ export default function Groupe(props) {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={60}>
-        <FlatList
+        <ScrollView
           ref={groupChatRef}
-          data={groupMessages}
-          extraData={groupMessages}
-          keyExtractor={(item) => item.key}
-          renderItem={({ item }) =>
-            renderMsg(item, item.idsender === userid, () => {
-              if (item.idsender === userid) {
-                Alert.alert('Message', undefined, [
-                  { text: '😊 Réagir', onPress: () => { setGroupSelectedMsg(item); setShowGroupReact(true); } },
-                  { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteGroupMsg(item.key) },
-                  { text: 'Annuler', style: 'cancel' },
-                ]);
-              } else { setGroupSelectedMsg(item); setShowGroupReact(true); }
-            })
-          }
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}
-          onContentSizeChange={scrollGroupToBottom}
-          onLayout={scrollGroupToBottom}
-        />
+        >
+          {groupMessages.map((item) => (
+            <View key={item.key}>
+              {renderMsg(item, item.idsender === userid, () => {
+                if (item.idsender === userid) {
+                  Alert.alert('Message', undefined, [
+                    { text: '😊 Réagir', onPress: () => { setGroupSelectedMsg(item); setShowGroupReact(true); } },
+                    { text: '🗑️ Supprimer', style: 'destructive', onPress: () => deleteGroupMsg(item.key) },
+                    { text: 'Annuler', style: 'cancel' },
+                  ]);
+                } else { setGroupSelectedMsg(item); setShowGroupReact(true); }
+              })}
+            </View>
+          ))}
+        </ScrollView>
         {renderInputBar({
           msg: groupMsg, setMsg: setGroupMsg,
           imageToSend: groupImageToSend, setImageToSend: setGroupImageToSend,

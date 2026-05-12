@@ -115,12 +115,13 @@ export default function Chat(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    if (flatListRef.current && data.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: false });
+  // Scroll to bottom whenever messages change
+  useEffect(() => {
+    if (data.length > 0) {
+      const t = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 80);
+      return () => clearTimeout(t);
     }
-  };
+  }, [data.length]);
 
   // ─── THEME ────────────────────────────────────────────────────────────────
   const saveTheme = async (t) => {
@@ -496,19 +497,18 @@ export default function Chat(props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
-        {/* Messages list */}
-        <FlatList
+        {/* Messages list — ScrollView instead of FlatList: reliable re-render in New Architecture */}
+        <ScrollView
           ref={flatListRef}
-          data={data}
-          extraData={data}
-          keyExtractor={(item) => item.key}
-          renderItem={renderMessage}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
-          onContentSizeChange={scrollToBottom}
-          onLayout={scrollToBottom}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        />
+        >
+          {data.map((item) => (
+            <View key={item.key}>
+              {renderMessage({ item })}
+            </View>
+          ))}
+        </ScrollView>
 
         {/* Image preview */}
         {imageToSend && (
