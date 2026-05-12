@@ -502,6 +502,10 @@ export default function Chat(props) {
           contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 4 }}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         >
+          {/* DEBUG — retire cette ligne une fois que ça marche */}
+          <Text style={{ color: 'red', textAlign: 'center', fontSize: 11 }}>
+            tick={renderTick} msgs={messagesRef.current.length}
+          </Text>
           {messagesRef.current.map((item) => (
             <View key={item.key}>
               {renderMessage({ item })}
