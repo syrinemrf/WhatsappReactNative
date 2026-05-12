@@ -81,15 +81,20 @@ export default function Chat(props) {
     ? currentid + secondid
     : secondid + currentid;
 
-  const ref_discussion      = ref_all_messages.child(iddiscussion);
-  const ref_chat            = ref_discussion.child('chat');
-  const ref_second_istyping = ref_discussion.child(secondid + 'istyping');
+  // Stable refs — not recreated on re-render
+  const ref_chat_ref       = useRef(database.ref('AllMessages/' + iddiscussion + '/chat'));
+  const ref_istyping_ref   = useRef(database.ref('AllMessages/' + iddiscussion + '/' + secondid + 'istyping'));
+  const ref_discussion_ref = useRef(database.ref('AllMessages/' + iddiscussion));
 
   useEffect(() => {
+    const ref_chat = ref_chat_ref.current;
+    const ref_second_istyping = ref_istyping_ref.current;
+
     const handleMessages = (snapshot) => {
       const d = [];
       snapshot.forEach((m) => d.push({ ...m.val(), key: m.key }));
-      setData(d);
+      console.log('[handleMessages] count:', d.length, 'last:', d[d.length-1]?.message);
+      setData([...d]);
     };
     ref_chat.on('value', handleMessages);
     ref_second_istyping.on('value', (snap) => setSecondistyping(!!snap.val()));
@@ -98,7 +103,6 @@ export default function Chat(props) {
       if (val) { try { setTheme(JSON.parse(val)); } catch {} }
     });
 
-    // Load contacts for forward feature (once — no live updates needed here)
     database.ref('allaccounts').once('value').then((snap) => {
       const d = [];
       snap.forEach((u) => { if (u.val() && u.val().Id !== currentid) d.push(u.val()); });
@@ -183,7 +187,7 @@ export default function Chat(props) {
     setShowLocModal(false);
     setPendingLoc(null);
     try {
-      await ref_chat.push().set({
+      await ref_chat_ref.current.push().set({
         idsender: currentid, idreceiver: secondid,
         latitude, longitude,
         time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -237,7 +241,7 @@ export default function Chat(props) {
       });
       if (error) throw error;
       const { data } = supabase.storage.from('Images').getPublicUrl(filename);
-      await ref_chat.push().set({
+      await ref_chat_ref.current.push().set({
         idsender: currentid, idreceiver: secondid,
         message: data.publicUrl,
         time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -260,7 +264,7 @@ export default function Chat(props) {
   // ─── REACTIONS ────────────────────────────────────────────────────────────
   const reactToMessage = (msgKey, emoji) => {
     if (!msgKey) return;
-    ref_chat.child(msgKey).child('reactions').child(emoji)
+    ref_chat_ref.current.child(msgKey).child('reactions').child(emoji)
       .transaction((current) => (current || 0) + 1);
     setShowReactions(false);
     setSelectedMsg(null);
@@ -332,7 +336,7 @@ export default function Chat(props) {
           text: '🗑️ Supprimer pour tous', style: 'destructive',
           onPress: () => Alert.alert('Supprimer', 'Supprimer ce message pour tout le monde ?', [
             { text: 'Annuler', style: 'cancel' },
-            { text: 'Supprimer', style: 'destructive', onPress: () => ref_chat.child(item.key).remove() },
+            { text: 'Supprimer', style: 'destructive', onPress: () => ref_chat_ref.current.child(item.key).remove() },
           ]),
         },
         { text: 'Annuler', style: 'cancel' },
@@ -562,9 +566,9 @@ export default function Chat(props) {
               onChangeText={setMessage}
               onFocus={() => {
                 setShowEmoji(false);
-                ref_discussion.child(currentid + 'istyping').set(true);
+                ref_discussion_ref.current.child(currentid + 'istyping').set(true);
               }}
-              onBlur={() => ref_discussion.child(currentid + 'istyping').set(false)}
+              onBlur={() => ref_discussion_ref.current.child(currentid + 'istyping').set(false)}
               placeholder="Message..."
               placeholderTextColor="#aaa"
               style={styles.input}
